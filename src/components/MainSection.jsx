@@ -13,6 +13,7 @@ import {
   getMalayalamNewTrending,
   getHindiNewTrending,
   getArtistRadio,
+  getSongbyQuery,
 } from "../../fetch";
 
 import MusicContext from "../context/MusicContext";
@@ -359,7 +360,14 @@ const MainSection = () => {
   const [playlists, setPlaylists] =
     useState([]);
 
-  const [artistRadio, setArtistRadio] = useState([]);
+  const [artistRadioStations, setArtistRadioStations] =
+    useState([]);
+
+  const [artistRadioLoading, setArtistRadioLoading] =
+    useState("");
+
+  const [artistRadioError, setArtistRadioError] =
+    useState("");
 
   const [recentlyPlayedSongs, setRecentlyPlayedSongs] =
     useState([]);
@@ -514,10 +522,10 @@ const MainSection = () => {
           albumResult,
           playlistResult,
 
-          tamilRadioResult,
-          malayalamRadioResult,
-          hindiRadioResult,
-          englishRadioResult,
+          tamilArtistRadioResult,
+          malayalamArtistRadioResult,
+          hindiArtistRadioResult,
+          englishArtistRadioResult,
         ] = await Promise.allSettled([
           fetchplaylistsByID(10763385),
 
@@ -657,33 +665,54 @@ const MainSection = () => {
         );
 
         /* =================================================
-           ARTIST RADIO
+           ARTIST RADIO STATIONS
         ================================================= */
 
-        const artistRadioItems = [
+        const getStationId = (response) => {
+          if (!response) {
+            return "";
+          }
+
+          return (
+            response?.data?.stationId ||
+            response?.stationId ||
+            response?.data?.data?.stationId ||
+            ""
+          );
+        };
+
+        const radioStations = [
           {
             language: "Tamil",
             key: "tamil",
-            response: unwrap(tamilRadioResult),
+            query: "tamil",
+            response: unwrap(tamilArtistRadioResult),
           },
           {
             language: "Malayalam",
             key: "malayalam",
-            response: unwrap(malayalamRadioResult),
+            query: "malayalam",
+            response: unwrap(malayalamArtistRadioResult),
           },
           {
             language: "Hindi",
             key: "hindi",
-            response: unwrap(hindiRadioResult),
+            query: "hindi",
+            response: unwrap(hindiArtistRadioResult),
           },
           {
             language: "English",
             key: "english",
-            response: unwrap(englishRadioResult),
+            query: "english",
+            response: unwrap(englishArtistRadioResult),
           },
-        ].filter((item) => item.response);
+        ].map((station) => ({
+          ...station,
+          stationId: getStationId(station.response),
+        }));
 
-        setArtistRadio(artistRadioItems);
+        setArtistRadioStations(radioStations);
+        setArtistRadioError("");
 
         /* =================================================
            ARTISTS
@@ -749,6 +778,98 @@ const MainSection = () => {
       mounted = false;
     };
   }, []);
+
+  /* =======================================================
+     PLAY ARTIST RADIO — COMPLETE PLAYLIST
+  ======================================================= */
+
+  const playArtistRadio = async (station) => {
+    if (!station?.query) {
+      return;
+    }
+
+    if (typeof playMusic !== "function") {
+      setArtistRadioError("Music player is not available.");
+      return;
+    }
+
+    const key = station.key || station.query;
+
+    setArtistRadioLoading(key);
+    setArtistRadioError("");
+
+    try {
+      let response = null;
+
+      try {
+        response = await getArtistRadio(
+          station.language,
+          station.query
+        );
+      } catch (radioError) {
+        console.warn(
+          "Artist radio metadata request failed:",
+          radioError
+        );
+      }
+
+      /*
+       * /radio/artist may return station metadata only
+       * (stationId), not playable songs.
+       */
+      let songs = extractSongs(response);
+
+      /*
+       * Build the complete playable radio queue from the
+       * same language query when the radio response contains
+       * no song array. The current API supports up to 150.
+       */
+      if (!songs.length) {
+        const searchResponse = await getSongbyQuery(
+          station.query,
+          150
+        );
+
+        songs = extractSongs(searchResponse);
+      }
+
+      const normalizedQueue = normalizeSongs(songs);
+
+      const playableQueue = normalizedQueue.filter(
+        (song) => Boolean(getSongAudio(song))
+      );
+
+      if (!playableQueue.length) {
+        throw new Error(
+          `No playable ${station.language} radio songs were returned by the API.`
+        );
+      }
+
+      const firstSong = playableQueue[0];
+
+      /*
+       * Pass the COMPLETE queue to MusicContext.
+       * Player handles Next / Previous / Auto-next /
+       * Shuffle / Repeat for the entire radio playlist.
+       */
+      await playMusic(
+        firstSong,
+        playableQueue
+      );
+    } catch (err) {
+      console.error(
+        `${station.language} Artist Radio error:`,
+        err
+      );
+
+      setArtistRadioError(
+        err?.message ||
+          `Unable to load ${station.language} Artist Radio.`
+      );
+    } finally {
+      setArtistRadioLoading("");
+    }
+  };
 
   /* =======================================================
      LOADING
@@ -1220,14 +1341,12 @@ const MainSection = () => {
 
       <br />
 
-
-
       {/* ===================================================
           ARTIST RADIO
       =================================================== */}
 
-      {artistRadio.length > 0 && (
-        <section className="w-full px-3 lg:px-12">
+      {artistRadioStations.length > 0 && (
+        <section className="w-full">
           <h2
             className="
               m-4
@@ -1235,71 +1354,123 @@ const MainSection = () => {
               text-xl
               lg:text-2xl
               font-semibold
+              w-full
+              ml-[1rem]
+              lg:ml-[3.5rem]
             "
           >
             Artist Radio
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {artistRadio.map((radio) => {
-              const stationId =
-                radio.response?.data?.stationId ||
-                radio.response?.stationId ||
-                "";
+          {artistRadioError && (
+            <p
+              className="
+                mx-4
+                mb-3
+                rounded-xl
+                border
+                border-red-500/20
+                bg-red-500/10
+                px-4
+                py-3
+                text-sm
+                text-red-500
+              "
+            >
+              {artistRadioError}
+            </p>
+          )}
+
+          <div
+            className="
+              grid
+              grid-cols-1
+              sm:grid-cols-2
+              gap-3
+              px-3
+              lg:px-3
+              w-full
+            "
+          >
+            {artistRadioStations.map((station) => {
+              const isLoading =
+                artistRadioLoading === station.key;
 
               return (
                 <div
-                  key={radio.key}
+                  key={station.key}
                   className="
+                    flex
+                    items-center
+                    justify-between
+                    gap-4
                     rounded-2xl
                     border
                     border-black/10
                     dark:border-white/10
-                    bg-black/[0.04]
+                    bg-black/[0.03]
                     dark:bg-white/[0.05]
-                    p-4
+                    px-4
+                    py-4
+                    shadow-sm
+                    transition
+                    hover:shadow-md
                   "
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="font-semibold truncate">
-                        {radio.language} Radio
-                      </h3>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-base font-semibold">
+                      {station.language} Radio
+                    </h3>
 
-                      <p className="text-xs opacity-60 mt-1">
-                        Artist radio
-                      </p>
-                    </div>
+                    <p className="mt-1 text-xs opacity-60">
+                      Artist radio playlist
+                    </p>
 
-                    <span
-                      className="
-                        shrink-0
-                        w-10
-                        h-10
-                        rounded-full
-                        flex
-                        items-center
-                        justify-center
-                        bg-black
-                        text-white
-                        dark:bg-white
-                        dark:text-black
-                      "
-                      title={
-                        stationId
-                          ? "Radio station available"
-                          : "Radio information"
-                      }
-                    >
-                      <FaPlay className="text-xs ml-0.5" />
-                    </span>
+                    <p className="mt-1 text-xs opacity-50">
+                      Complete song queue • up to 150 songs
+                    </p>
                   </div>
 
-                  {stationId && (
-                    <p className="mt-3 text-[11px] opacity-50 break-all">
-                      Station ID: {stationId}
-                    </p>
-                  )}
+                  <button
+                    type="button"
+                    aria-label={`Play ${station.language} Artist Radio`}
+                    disabled={Boolean(artistRadioLoading)}
+                    onClick={() =>
+                      playArtistRadio(station)
+                    }
+                    className="
+                      flex
+                      h-11
+                      w-11
+                      shrink-0
+                      items-center
+                      justify-center
+                      rounded-full
+                      bg-black
+                      text-white
+                      shadow-lg
+                      transition
+                      hover:scale-105
+                      disabled:cursor-not-allowed
+                      disabled:opacity-60
+                    "
+                  >
+                    {isLoading ? (
+                      <span
+                        className="
+                          h-5
+                          w-5
+                          rounded-full
+                          border-2
+                          border-white
+                          border-t-transparent
+                          animate-spin
+                        "
+                      />
+                    ) : (
+                      <FaPlay className="ml-0.5 text-sm" />
+                    )}
+                  </button>
                 </div>
               );
             })}
