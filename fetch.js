@@ -1,26 +1,46 @@
 const API_URL = "https://jiosaavndev.vercel.app/api";
 
-// Make sure the API URL exists
 if (!API_URL) {
   console.error("API URL is missing");
 }
 
-// Common API request helper
-const apiRequest = async (endpoint) => {
-  try {
-    const response = await fetch(`${API_URL}${endpoint}`);
+const encode = (value) =>
+  encodeURIComponent(String(value ?? "").trim());
 
-    // Read response as text first so HTML/non-JSON errors don't crash JSON parsing
+const toPositiveLimit = (value, fallback = 50) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0
+    ? Math.floor(number)
+    : fallback;
+};
+
+// ----------------------------------------------------
+// Common API request helper
+// ----------------------------------------------------
+const apiRequest = async (endpoint) => {
+  const cleanEndpoint = String(endpoint || "");
+  const url = `${API_URL}${cleanEndpoint}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
     const text = await response.text();
 
-    let data;
+    let data = {};
 
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      throw new Error(
-        `API returned invalid JSON (${response.status} ${response.statusText})`
-      );
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(
+          `API returned invalid JSON (${response.status} ${response.statusText})`
+        );
+      }
     }
 
     if (!response.ok) {
@@ -33,21 +53,18 @@ const apiRequest = async (endpoint) => {
 
     return data;
   } catch (error) {
-    console.error("API Error:", error);
-    throw error;
+    console.error(`API Error: ${url}`, error);
+    throw error instanceof Error
+      ? error
+      : new Error("API request failed");
   }
 };
-
-// Encode search/query parameters safely
-const encode = (value) => encodeURIComponent(String(value ?? ""));
 
 // ----------------------------------------------------
 // Song Suggestions
 // ----------------------------------------------------
 export const getSuggestionSong = async (id) => {
-  if (!id) {
-    throw new Error("Song ID is required");
-  }
+  if (!id) throw new Error("Song ID is required");
 
   return apiRequest(
     `/songs/${encode(id)}/suggestions?limit=150`
@@ -58,9 +75,7 @@ export const getSuggestionSong = async (id) => {
 // General Search
 // ----------------------------------------------------
 export const getSearchData = async (query) => {
-  if (!query) {
-    throw new Error("Search query is required");
-  }
+  if (!query) throw new Error("Search query is required");
 
   return apiRequest(
     `/search?query=${encode(query)}&limit=150`
@@ -71,12 +86,10 @@ export const getSearchData = async (query) => {
 // Search Songs
 // ----------------------------------------------------
 export const getSongbyQuery = async (query, limit = 50) => {
-  if (!query) {
-    throw new Error("Song search query is required");
-  }
+  if (!query) throw new Error("Song search query is required");
 
   return apiRequest(
-    `/search/songs?query=${encode(query)}&limit=${Number(limit) || 50}`
+    `/search/songs?query=${encode(query)}&limit=${toPositiveLimit(limit)}`
   );
 };
 
@@ -84,12 +97,10 @@ export const getSongbyQuery = async (query, limit = 50) => {
 // Search Artists
 // ----------------------------------------------------
 export const getArtistbyQuery = async (query, limit = 50) => {
-  if (!query) {
-    throw new Error("Artist search query is required");
-  }
+  if (!query) throw new Error("Artist search query is required");
 
   return apiRequest(
-    `/search/artists?query=${encode(query)}&limit=${Number(limit) || 50}`
+    `/search/artists?query=${encode(query)}&limit=${toPositiveLimit(limit)}`
   );
 };
 
@@ -97,9 +108,7 @@ export const getArtistbyQuery = async (query, limit = 50) => {
 // Get Song By ID
 // ----------------------------------------------------
 export const getSongById = async (songId) => {
-  if (!songId) {
-    throw new Error("Song ID is required");
-  }
+  if (!songId) throw new Error("Song ID is required");
 
   return apiRequest(`/songs/${encode(songId)}`);
 };
@@ -108,9 +117,7 @@ export const getSongById = async (songId) => {
 // Search Albums
 // ----------------------------------------------------
 export const searchAlbumByQuery = async (query) => {
-  if (!query) {
-    throw new Error("Album search query is required");
-  }
+  if (!query) throw new Error("Album search query is required");
 
   return apiRequest(
     `/search/albums?query=${encode(query)}&limit=130`
@@ -121,9 +128,7 @@ export const searchAlbumByQuery = async (query) => {
 // Search Artists
 // ----------------------------------------------------
 export const searchArtistByQuery = async (query) => {
-  if (!query) {
-    throw new Error("Artist search query is required");
-  }
+  if (!query) throw new Error("Artist search query is required");
 
   return apiRequest(
     `/search/artists?query=${encode(query)}&limit=130`
@@ -134,35 +139,25 @@ export const searchArtistByQuery = async (query) => {
 // Get Album By ID
 // ----------------------------------------------------
 export const fetchAlbumByID = async (ID) => {
-  if (!ID) {
-    throw new Error("Album ID is required");
-  }
+  if (!ID) throw new Error("Album ID is required");
 
-  return apiRequest(
-    `/albums?id=${encode(ID)}&limit=130`
-  );
+  return apiRequest(`/albums?id=${encode(ID)}&limit=130`);
 };
 
 // ----------------------------------------------------
 // Get Artist By ID
 // ----------------------------------------------------
 export const fetchArtistByID = async (ID) => {
-  if (!ID) {
-    throw new Error("Artist ID is required");
-  }
+  if (!ID) throw new Error("Artist ID is required");
 
-  return apiRequest(
-    `/artists?id=${encode(ID)}`
-  );
+  return apiRequest(`/artists?id=${encode(ID)}`);
 };
 
 // ----------------------------------------------------
 // Search Playlists
 // ----------------------------------------------------
 export const searchPlayListByQuery = async (query) => {
-  if (!query) {
-    throw new Error("Playlist search query is required");
-  }
+  if (!query) throw new Error("Playlist search query is required");
 
   return apiRequest(
     `/search/playlists?query=${encode(query)}&limit=130`
@@ -173,9 +168,7 @@ export const searchPlayListByQuery = async (query) => {
 // Get Playlist By ID
 // ----------------------------------------------------
 export const fetchplaylistsByID = async (ID) => {
-  if (!ID) {
-    throw new Error("Playlist ID is required");
-  }
+  if (!ID) throw new Error("Playlist ID is required");
 
   return apiRequest(
     `/playlists?id=${encode(ID)}&limit=130`
@@ -183,18 +176,10 @@ export const fetchplaylistsByID = async (ID) => {
 };
 
 // ----------------------------------------------------
-// Get Song Suggestions By ID
+// Song Suggestions By ID
 // ----------------------------------------------------
-// IMPORTANT:
-// Your old code was calling:
-// https://jiosaavndev.vercel.app/api/?id=ID
-//
-// That is almost certainly the wrong endpoint.
-// Use /songs/{ID}/suggestions instead.
 export const fetchSongSuggestionsByID = async (ID) => {
-  if (!ID) {
-    throw new Error("Song ID is required");
-  }
+  if (!ID) throw new Error("Song ID is required");
 
   return apiRequest(
     `/songs/${encode(ID)}/suggestions?limit=130`
@@ -205,11 +190,108 @@ export const fetchSongSuggestionsByID = async (ID) => {
 // Lyrics By ID
 // ----------------------------------------------------
 export const LyricsByID = async (ID) => {
-  if (!ID) {
-    throw new Error("Song ID is required");
+  if (!ID) throw new Error("Song ID is required");
+
+  return apiRequest(`/songs/${encode(ID)}/lyrics`);
+};
+
+// ====================================================
+// NEW TRENDING
+// ====================================================
+
+// Exact endpoint format:
+// /new_trending?language=tamil
+// /new_trending?language=malayalam
+// /new_trending?language=hindi
+export const getNewTrending = async (language) => {
+  const normalizedLanguage = String(language || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedLanguage) {
+    throw new Error("Language is required for new trending");
   }
 
   return apiRequest(
-    `/songs/${encode(ID)}/lyrics`
+    `/new_trending?language=${encode(normalizedLanguage)}`
   );
+};
+
+export const getTamilNewTrending = async () =>
+  getNewTrending("tamil");
+
+export const getMalayalamNewTrending = async () =>
+  getNewTrending("malayalam");
+
+export const getHindiNewTrending = async () =>
+  getNewTrending("hindi");
+
+// All three languages. One failed language does not reject the others.
+export const getNewTrendingLanguages = async () => {
+  const [tamil, malayalam, hindi] =
+    await Promise.allSettled([
+      getTamilNewTrending(),
+      getMalayalamNewTrending(),
+      getHindiNewTrending(),
+    ]);
+
+  return {
+    tamil:
+      tamil.status === "fulfilled" ? tamil.value : null,
+    malayalam:
+      malayalam.status === "fulfilled"
+        ? malayalam.value
+        : null,
+    hindi:
+      hindi.status === "fulfilled" ? hindi.value : null,
+  };
+};
+
+// ====================================================
+// FEATURED RADIO
+// ====================================================
+
+// Exact endpoint format:
+// /radio/featured?name=malayalam
+export const getFeaturedRadio = async (name) => {
+  const normalizedName = String(name || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedName) {
+    throw new Error("Radio name is required");
+  }
+
+  return apiRequest(
+    `/radio/featured?name=${encode(normalizedName)}`
+  );
+};
+
+export const getTamilFeaturedRadio = async () =>
+  getFeaturedRadio("tamil");
+
+export const getMalayalamFeaturedRadio = async () =>
+  getFeaturedRadio("malayalam");
+
+export const getHindiFeaturedRadio = async () =>
+  getFeaturedRadio("hindi");
+
+export const getFeaturedRadioLanguages = async () => {
+  const [tamil, malayalam, hindi] =
+    await Promise.allSettled([
+      getTamilFeaturedRadio(),
+      getMalayalamFeaturedRadio(),
+      getHindiFeaturedRadio(),
+    ]);
+
+  return {
+    tamil:
+      tamil.status === "fulfilled" ? tamil.value : null,
+    malayalam:
+      malayalam.status === "fulfilled"
+        ? malayalam.value
+        : null,
+    hindi:
+      hindi.status === "fulfilled" ? hindi.value : null,
+  };
 };
