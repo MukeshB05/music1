@@ -638,15 +638,65 @@ const MainSection = () => {
   const [artistRadioStations, setArtistRadioStations] = useState([]);
   const [radioStations, setRadioStations] = useState([]);
   const [radioLoading, setRadioLoading] = useState("");
+  const [recentlyPlayed, setRecentlyPlayed] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const recentlyPlayedRef = useRef(null);
   const trendingRef = useRef(null);
   const chartsRef = useRef(null);
   const releasesRef = useRef(null);
   const editorialRef = useRef(null);
   const chennaiRef = useRef(null);
   const freshRef = useRef(null);
+
+  /* =======================================================
+     RECENTLY PLAYED
+     MusicContext saves the latest songs in localStorage under
+     "playedSongs". This keeps the home page in sync even when
+     the song is played from another section.
+  ======================================================= */
+  const loadRecentlyPlayed = () => {
+    try {
+      const saved = localStorage.getItem("playedSongs");
+      const parsed = saved ? JSON.parse(saved) : [];
+
+      if (!Array.isArray(parsed)) {
+        setRecentlyPlayed([]);
+        return;
+      }
+
+      setRecentlyPlayed(
+        uniqueSongs(parsed)
+          .filter((song) => Boolean(getSongId(song)))
+          .slice(0, 20)
+      );
+    } catch (err) {
+      console.warn("Could not load recently played songs:", err);
+      setRecentlyPlayed([]);
+    }
+  };
+
+  useEffect(() => {
+    loadRecentlyPlayed();
+
+    const handleStorage = (event) => {
+      if (!event.key || event.key === "playedSongs") {
+        loadRecentlyPlayed();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+
+    // The storage event does not fire in the same browser tab.
+    // A light refresh keeps Recently Played updated after playback.
+    const refreshTimer = window.setInterval(loadRecentlyPlayed, 1000);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.clearInterval(refreshTimer);
+    };
+  }, []);
 
   const playQueue = async (song, songs) => {
     if (!song || typeof playMusic !== "function") return;
@@ -932,6 +982,14 @@ const MainSection = () => {
       "
     >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-7">
+        {/* Recently Played — always the first music row */}
+        <SongRow
+          title="Recently Played"
+          songs={recentlyPlayed}
+          scrollRef={recentlyPlayedRef}
+          onPlay={playQueue}
+        />
+
         <SongRow
           title="Trending Now"
           songs={trending}
