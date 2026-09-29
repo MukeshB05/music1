@@ -5,18 +5,22 @@
 
 const API_URL = "https://jiosaavndev.vercel.app/api";
 
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 150;
+const REQUEST_TIMEOUT_MS = 15000;
+
 // ============================================================
 // COMMON HELPERS
 // ============================================================
 
-const toPositiveLimit = (value, fallback = 50) => {
+const toPositiveLimit = (value, fallback = DEFAULT_LIMIT) => {
   const number = Number(value);
 
   if (!Number.isFinite(number) || number <= 0) {
     return fallback;
   }
 
-  return Math.min(Math.floor(number), 150);
+  return Math.min(Math.floor(number), MAX_LIMIT);
 };
 
 const encode = (value) =>
@@ -24,37 +28,48 @@ const encode = (value) =>
 
 const buildUrl = (path) => {
   const cleanPath = String(path || "").replace(/^\/+/, "");
-
   return `${API_URL.replace(/\/+$/, "")}/${cleanPath}`;
 };
 
+const normalizeLanguage = (language) => {
+  const value = String(language || "").trim().toLowerCase();
+  if (!value) return "";
+  return value;
+};
+
+const capitalize = (value) =>
+  value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+
 // ============================================================
-// SAFE JSON REQUEST
+// SAFE JSON REQUEST (with timeout + abort)
 // ============================================================
 
 const apiRequest = async (path, options = {}) => {
   const url = buildUrl(path);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    options.timeout ?? REQUEST_TIMEOUT_MS
+  );
 
   try {
     const response = await fetch(url, {
       method: "GET",
       ...options,
+      signal: controller.signal,
       headers: {
         Accept: "application/json",
         ...(options.headers || {}),
       },
     });
 
-    const contentType =
-      response.headers.get("content-type") || "";
+    const contentType = response.headers.get("content-type") || "";
 
     let data;
-
     if (contentType.includes("application/json")) {
       data = await response.json();
     } else {
       const text = await response.text();
-
       try {
         data = JSON.parse(text);
       } catch {
@@ -67,30 +82,29 @@ const apiRequest = async (path, options = {}) => {
         data?.message ||
         data?.error ||
         `API request failed (${response.status})`;
-
       throw new Error(message);
     }
 
-    if (
-      data &&
-      typeof data === "object" &&
-      data.success === false
-    ) {
+    if (data && typeof data === "object" && data.success === false) {
       throw new Error(
-        data.message ||
-          data.error ||
-          "API request failed"
+        data.message || data.error || "API request failed"
       );
     }
 
     return data;
   } catch (error) {
-    console.error(
-      `MusicMax API Error [${url}]`,
-      error
-    );
+    if (error.name === "AbortError") {
+      const timeoutError = new Error(
+        `API request timed out after ${REQUEST_TIMEOUT_MS}ms`
+      );
+      console.error(`MusicMax API Timeout [${url}]`);
+      throw timeoutError;
+    }
 
+    console.error(`MusicMax API Error [${url}]`, error);
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 
@@ -99,49 +113,28 @@ const apiRequest = async (path, options = {}) => {
 // ============================================================
 
 export const extractResults = (response) => {
-  if (!response) {
-    return [];
-  }
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
 
-  if (Array.isArray(response)) {
-    return response;
-  }
+  const possibleArrays = [
+    response?.data?.results,
+    response?.data?.songs,
+    response?.data?.data,
+    response?.results,
+    response?.songs,
+    response?.data,
+  ];
 
-  if (Array.isArray(response?.data)) {
-    return response.data;
-  }
-
-  if (Array.isArray(response?.data?.results)) {
-    return response.data.results;
-  }
-
-  if (Array.isArray(response?.results)) {
-    return response.results;
-  }
-
-  if (Array.isArray(response?.data?.songs)) {
-    return response.data.songs;
-  }
-
-  if (Array.isArray(response?.songs)) {
-    return response.songs;
-  }
-
-  if (Array.isArray(response?.data?.data)) {
-    return response.data.data;
+  for (const value of possibleArrays) {
+    if (Array.isArray(value)) return value;
   }
 
   return [];
 };
 
 export const extractSongs = (response) => {
-  if (!response) {
-    return [];
-  }
-
-  if (Array.isArray(response)) {
-    return response;
-  }
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
 
   const possibleArrays = [
     response?.data?.songs,
@@ -153,25 +146,41 @@ export const extractSongs = (response) => {
   ];
 
   for (const value of possibleArrays) {
-    if (Array.isArray(value)) {
-      return value;
-    }
+    if (Array.isArray(value)) return value;
   }
 
   return [];
 };
 
 // ============================================================
+// SEARCH HELPERS
+// ============================================================
+
+const emptySearchResponse = () => ({
+  success: true,
+  data: { results: [] },
+});
+
+const performSearch = async (endpoint, query, limit) => {
+  const searchQuery = String(query || "").trim();
+  if (!searchQuery) return emptySearchResponse();
+
+  const safeLimit = toPositiveLimit(limit, DEFAULT_LIMIT);
+  return apiRequest(
+    `${endpoint}?query=${encode(searchQuery)}&limit=${safeLimit}`
+  );
+};
+
+// ============================================================
 // SONG SUGGESTIONS
 // ============================================================
 
-export const getSuggestionSong = async (id) => {
-  if (!id) {
-    throw new Error("Song ID is required");
-  }
+export const getSuggestionSong = async (id, limit = 150) => {
+  if (!id) throw new Error("Song ID is required");
+  const safeLimit = toPositiveLimit(limit, 150);
 
   return apiRequest(
-    `/songs/${encode(id)}/suggestions?limit=150`
+    `/songs/${encode(id)}/suggestions?limit=${safeLimit}`
   );
 };
 
@@ -179,181 +188,45 @@ export const getSuggestionSong = async (id) => {
 // SEARCH
 // ============================================================
 
-export const getSearchData = async (query, limit = 150) => {
-  const searchQuery = String(query || "").trim();
+export const getSearchData = async (query, limit = 150) =>
+  performSearch("/search", query, limit);
 
-  if (!searchQuery) {
-    return {
-      success: true,
-      data: {
-        results: [],
-      },
-    };
-  }
+export const getSongbyQuery = async (query, limit = DEFAULT_LIMIT) =>
+  performSearch("/search", query, limit);
 
-  const safeLimit = toPositiveLimit(limit, 150);
+export const getArtistbyQuery = async (query, limit = DEFAULT_LIMIT) =>
+  performSearch("/search/artists", query, limit);
 
-  return apiRequest(
-    `/search?query=${encode(searchQuery)}&limit=${safeLimit}`
-  );
-};
+export const searchArtistByQuery = (query, limit = DEFAULT_LIMIT) =>
+  getArtistbyQuery(query, limit);
 
-// ============================================================
-// SONG SEARCH
-// ============================================================
+export const searchAlbumByQuery = async (query, limit = DEFAULT_LIMIT) =>
+  performSearch("/search/albums", query, limit);
 
-export const getSongbyQuery = async (
-  query,
-  limit = 50
-) => {
-  const searchQuery = String(query || "").trim();
-
-  if (!searchQuery) {
-    return {
-      success: true,
-      data: {
-        results: [],
-      },
-    };
-  }
-
-  const safeLimit = toPositiveLimit(limit, 50);
-
-  return apiRequest(
-    `/search?query=${encode(searchQuery)}&limit=${safeLimit}`
-  );
-};
+export const searchPlayListByQuery = async (query, limit = DEFAULT_LIMIT) =>
+  performSearch("/search/playlists", query, limit);
 
 // ============================================================
-// ARTIST SEARCH
-// ============================================================
-
-export const getArtistbyQuery = async (
-  query,
-  limit = 50
-) => {
-  const searchQuery = String(query || "").trim();
-
-  if (!searchQuery) {
-    return {
-      success: true,
-      data: {
-        results: [],
-      },
-    };
-  }
-
-  const safeLimit = toPositiveLimit(limit, 50);
-
-  return apiRequest(
-    `/search/artists?query=${encode(searchQuery)}&limit=${safeLimit}`
-  );
-};
-
-export const searchArtistByQuery = async (
-  query,
-  limit = 50
-) => {
-  return getArtistbyQuery(query, limit);
-};
-
-// ============================================================
-// SONG BY ID
+// SONG / ALBUM / ARTIST / PLAYLIST BY ID
 // ============================================================
 
 export const getSongById = async (id) => {
-  if (!id) {
-    throw new Error("Song ID is required");
-  }
-
+  if (!id) throw new Error("Song ID is required");
   return apiRequest(`/songs/${encode(id)}`);
 };
 
-// ============================================================
-// ALBUM SEARCH
-// ============================================================
-
-export const searchAlbumByQuery = async (
-  query,
-  limit = 50
-) => {
-  const searchQuery = String(query || "").trim();
-
-  if (!searchQuery) {
-    return {
-      success: true,
-      data: {
-        results: [],
-      },
-    };
-  }
-
-  const safeLimit = toPositiveLimit(limit, 50);
-
-  return apiRequest(
-    `/search/albums?query=${encode(searchQuery)}&limit=${safeLimit}`
-  );
-};
-
-// ============================================================
-// ALBUM BY ID
-// ============================================================
-
 export const fetchAlbumByID = async (id) => {
-  if (!id) {
-    throw new Error("Album ID is required");
-  }
-
+  if (!id) throw new Error("Album ID is required");
   return apiRequest(`/albums?id=${encode(id)}`);
 };
 
-// ============================================================
-// ARTIST BY ID
-// ============================================================
-
 export const fetchArtistByID = async (id) => {
-  if (!id) {
-    throw new Error("Artist ID is required");
-  }
-
+  if (!id) throw new Error("Artist ID is required");
   return apiRequest(`/artists?id=${encode(id)}`);
 };
 
-// ============================================================
-// PLAYLIST SEARCH
-// ============================================================
-
-export const searchPlayListByQuery = async (
-  query,
-  limit = 50
-) => {
-  const searchQuery = String(query || "").trim();
-
-  if (!searchQuery) {
-    return {
-      success: true,
-      data: {
-        results: [],
-      },
-    };
-  }
-
-  const safeLimit = toPositiveLimit(limit, 50);
-
-  return apiRequest(
-    `/search/playlists?query=${encode(searchQuery)}&limit=${safeLimit}`
-  );
-};
-
-// ============================================================
-// PLAYLIST BY ID
-// ============================================================
-
 export const fetchplaylistsByID = async (id) => {
-  if (!id) {
-    throw new Error("Playlist ID is required");
-  }
-
+  if (!id) throw new Error("Playlist ID is required");
   return apiRequest(`/playlists?id=${encode(id)}`);
 };
 
@@ -361,16 +234,9 @@ export const fetchplaylistsByID = async (id) => {
 // SONG SUGGESTIONS BY ID
 // ============================================================
 
-export const fetchSongSuggestionsByID = async (
-  id,
-  limit = 50
-) => {
-  if (!id) {
-    throw new Error("Song ID is required");
-  }
-
-  const safeLimit = toPositiveLimit(limit, 50);
-
+export const fetchSongSuggestionsByID = async (id, limit = DEFAULT_LIMIT) => {
+  if (!id) throw new Error("Song ID is required");
+  const safeLimit = toPositiveLimit(limit, DEFAULT_LIMIT);
   return apiRequest(
     `/songs/${encode(id)}/suggestions?limit=${safeLimit}`
   );
@@ -381,10 +247,7 @@ export const fetchSongSuggestionsByID = async (
 // ============================================================
 
 export const LyricsByID = async (id) => {
-  if (!id) {
-    throw new Error("Song ID is required");
-  }
-
+  if (!id) throw new Error("Song ID is required");
   return apiRequest(`/lyrics?id=${encode(id)}`);
 };
 
@@ -392,87 +255,43 @@ export const LyricsByID = async (id) => {
 // NEW TRENDING
 // ============================================================
 
-export const getNewTrending = async (
-  language,
-  limit = 50
-) => {
-  const normalizedLanguage = String(
-    language || ""
-  )
-    .trim()
-    .toLowerCase();
+export const getNewTrending = async (language, limit = DEFAULT_LIMIT) => {
+  const lang = normalizeLanguage(language);
+  if (!lang) throw new Error("Language is required");
 
-  if (!normalizedLanguage) {
-    throw new Error("Language is required");
-  }
-
-  const safeLimit = toPositiveLimit(limit, 50);
-
+  const safeLimit = toPositiveLimit(limit, DEFAULT_LIMIT);
   return apiRequest(
-    `/new_trending?language=${encode(
-      normalizedLanguage
-    )}&limit=${safeLimit}`
+    `/new_trending?language=${encode(lang)}&limit=${safeLimit}`
   );
 };
 
-// ============================================================
-// LANGUAGE NEW TRENDING
-// ============================================================
+export const getTamilNewTrending = (limit = DEFAULT_LIMIT) =>
+  getNewTrending("tamil", limit);
 
-export const getTamilNewTrending = async (
-  limit = 50
-) => {
-  return getNewTrending("tamil", limit);
-};
+export const getMalayalamNewTrending = (limit = DEFAULT_LIMIT) =>
+  getNewTrending("malayalam", limit);
 
-export const getMalayalamNewTrending = async (
-  limit = 50
-) => {
-  return getNewTrending("malayalam", limit);
-};
+export const getHindiNewTrending = (limit = DEFAULT_LIMIT) =>
+  getNewTrending("hindi", limit);
 
-export const getHindiNewTrending = async (
-  limit = 50
-) => {
-  return getNewTrending("hindi", limit);
-};
+export const getEnglishNewTrending = (limit = DEFAULT_LIMIT) =>
+  getNewTrending("english", limit);
 
-export const getEnglishNewTrending = async (
-  limit = 50
-) => {
-  return getNewTrending("english", limit);
-};
-
-export const getNewTrendingLanguages = async (
-  limit = 50
-) => {
-  const results = await Promise.allSettled([
+export const getNewTrendingLanguages = async (limit = DEFAULT_LIMIT) => {
+  const [tamil, malayalam, hindi, english] = await Promise.allSettled([
     getTamilNewTrending(limit),
     getMalayalamNewTrending(limit),
     getHindiNewTrending(limit),
     getEnglishNewTrending(limit),
   ]);
 
+  const unwrap = (r) => (r.status === "fulfilled" ? r.value : null);
+
   return {
-    tamil:
-      results[0].status === "fulfilled"
-        ? results[0].value
-        : null,
-
-    malayalam:
-      results[1].status === "fulfilled"
-        ? results[1].value
-        : null,
-
-    hindi:
-      results[2].status === "fulfilled"
-        ? results[2].value
-        : null,
-
-    english:
-      results[3].status === "fulfilled"
-        ? results[3].value
-        : null,
+    tamil: unwrap(tamil),
+    malayalam: unwrap(malayalam),
+    hindi: unwrap(hindi),
+    english: unwrap(english),
   };
 };
 
@@ -480,217 +299,88 @@ export const getNewTrendingLanguages = async (
 // FEATURED RADIO
 // ============================================================
 
-export const getFeaturedRadio = async (
-  name
-) => {
+export const getFeaturedRadio = async (name) => {
   const stationName = String(name || "").trim();
+  if (!stationName) throw new Error("Radio station name is required");
+  return apiRequest(`/radio/featured?name=${encode(stationName)}`);
+};
 
-  if (!stationName) {
-    throw new Error(
-      "Radio station name is required"
-    );
-  }
+export const getTamilFeaturedRadio = () => getFeaturedRadio("Tamil");
+export const getMalayalamFeaturedRadio = () => getFeaturedRadio("Malayalam");
+export const getHindiFeaturedRadio = () => getFeaturedRadio("Hindi");
+export const getEnglishFeaturedRadio = () => getFeaturedRadio("English");
 
-  return apiRequest(
-    `/radio/featured?name=${encode(
-      stationName
-    )}`
-  );
+export const getFeaturedRadioLanguages = async () => {
+  const [tamil, malayalam, hindi, english] = await Promise.allSettled([
+    getTamilFeaturedRadio(),
+    getMalayalamFeaturedRadio(),
+    getHindiFeaturedRadio(),
+    getEnglishFeaturedRadio(),
+  ]);
+
+  const unwrap = (r) => (r.status === "fulfilled" ? r.value : null);
+
+  return {
+    tamil: unwrap(tamil),
+    malayalam: unwrap(malayalam),
+    hindi: unwrap(hindi),
+    english: unwrap(english),
+  };
 };
 
 // ============================================================
-// LANGUAGE FEATURED RADIO
+// ARTIST RADIO
 // ============================================================
 
-export const getTamilFeaturedRadio = async () => {
-  return getFeaturedRadio("Tamil");
-};
-
-export const getMalayalamFeaturedRadio =
-  async () => {
-    return getFeaturedRadio("Malayalam");
-  };
-
-export const getHindiFeaturedRadio =
-  async () => {
-    return getFeaturedRadio("Hindi");
-  };
-
-export const getEnglishFeaturedRadio =
-  async () => {
-    return getFeaturedRadio("English");
-  };
-
-export const getFeaturedRadioLanguages =
-  async () => {
-    const results = await Promise.allSettled([
-      getTamilFeaturedRadio(),
-      getMalayalamFeaturedRadio(),
-      getHindiFeaturedRadio(),
-      getEnglishFeaturedRadio(),
-    ]);
-
-    return {
-      tamil:
-        results[0].status === "fulfilled"
-          ? results[0].value
-          : null,
-
-      malayalam:
-        results[1].status === "fulfilled"
-          ? results[1].value
-          : null,
-
-      hindi:
-        results[2].status === "fulfilled"
-          ? results[2].value
-          : null,
-
-      english:
-        results[3].status === "fulfilled"
-          ? results[3].value
-          : null,
-    };
-  };
-
-// ============================================================
-// NEW: ARTIST RADIO
-//
-// Endpoint:
-// /radio/artist?name=Tamil&query=tamil
-// ============================================================
-
-export const getArtistRadio = async (
-  name,
-  query = ""
-) => {
+export const getArtistRadio = async (name, query = "") => {
   const artistName = String(name || "").trim();
+  if (!artistName) throw new Error("Artist radio name is required");
 
-  if (!artistName) {
-    throw new Error(
-      "Artist radio name is required"
-    );
-  }
+  const searchQuery = String(query || artistName).trim();
+  const params = new URLSearchParams({ name: artistName });
+  if (searchQuery) params.set("query", searchQuery);
 
-  const searchQuery = String(
-    query || artistName
-  ).trim();
-
-  const params = new URLSearchParams();
-
-  params.set("name", artistName);
-
-  if (searchQuery) {
-    params.set("query", searchQuery);
-  }
-
-  return apiRequest(
-    `/radio/artist?${params.toString()}`
-  );
+  return apiRequest(`/radio/artist?${params.toString()}`);
 };
 
-// ============================================================
-// LANGUAGE ARTIST RADIO
-// ============================================================
-
-export const getTamilArtistRadio = async () => {
-  return getArtistRadio(
-    "Tamil",
-    "tamil"
-  );
-};
-
-export const getMalayalamArtistRadio =
-  async () => {
-    return getArtistRadio(
-      "Malayalam",
-      "malayalam"
-    );
-  };
-
-export const getHindiArtistRadio =
-  async () => {
-    return getArtistRadio(
-      "Hindi",
-      "hindi"
-    );
-  };
-
-export const getEnglishArtistRadio =
-  async () => {
-    return getArtistRadio(
-      "English",
-      "english"
-    );
-  };
-
-// ============================================================
-// ALL ARTIST RADIO
-// ============================================================
+export const getTamilArtistRadio = () => getArtistRadio("Tamil", "tamil");
+export const getMalayalamArtistRadio = () =>
+  getArtistRadio("Malayalam", "malayalam");
+export const getHindiArtistRadio = () => getArtistRadio("Hindi", "hindi");
+export const getEnglishArtistRadio = () => getArtistRadio("English", "english");
 
 export const getAllArtistRadio = async () => {
-  const results = await Promise.allSettled([
+  const [tamil, malayalam, hindi, english] = await Promise.allSettled([
     getTamilArtistRadio(),
     getMalayalamArtistRadio(),
     getHindiArtistRadio(),
     getEnglishArtistRadio(),
   ]);
 
+  const unwrap = (r) => (r.status === "fulfilled" ? r.value : null);
+
   return {
-    tamil:
-      results[0].status === "fulfilled"
-        ? results[0].value
-        : null,
-
-    malayalam:
-      results[1].status === "fulfilled"
-        ? results[1].value
-        : null,
-
-    hindi:
-      results[2].status === "fulfilled"
-        ? results[2].value
-        : null,
-
-    english:
-      results[3].status === "fulfilled"
-        ? results[3].value
-        : null,
+    tamil: unwrap(tamil),
+    malayalam: unwrap(malayalam),
+    hindi: unwrap(hindi),
+    english: unwrap(english),
   };
 };
 
 // ============================================================
-// GET RADIO STATION ID
+// RADIO HELPERS
 // ============================================================
 
-export const getRadioStationId = (
-  response
-) => {
-  return (
-    response?.data?.stationId ||
-    response?.stationId ||
-    response?.data?.id ||
-    response?.id ||
-    null
-  );
-};
+export const getRadioStationId = (response) =>
+  response?.data?.stationId ??
+  response?.stationId ??
+  response?.data?.id ??
+  response?.id ??
+  null;
 
-// ============================================================
-// EXTRACT RADIO SONGS
-//
-// Supports different possible response shapes.
-// ============================================================
-
-export const extractRadioSongs = (
-  response
-) => {
-  if (!response) {
-    return [];
-  }
-
-  if (Array.isArray(response)) {
-    return response;
-  }
+export const extractRadioSongs = (response) => {
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
 
   const possibleArrays = [
     response?.data?.songs,
@@ -704,9 +394,7 @@ export const extractRadioSongs = (
   ];
 
   for (const list of possibleArrays) {
-    if (Array.isArray(list)) {
-      return list;
-    }
+    if (Array.isArray(list)) return list;
   }
 
   return [];
@@ -714,77 +402,39 @@ export const extractRadioSongs = (
 
 // ============================================================
 // COMBINED LANGUAGE RADIO
-//
-// Gets:
-// 1. Artist radio metadata
-// 2. Language trending songs
-//
-// IMPORTANT:
-// stationId is NOT treated as an audio URL.
 // ============================================================
 
-export const getLanguageRadio = async (
-  language,
-  limit = 50
-) => {
-  const normalizedLanguage = String(
-    language || ""
-  )
-    .trim()
-    .toLowerCase();
+export const getLanguageRadio = async (language, limit = DEFAULT_LIMIT) => {
+  const lang = normalizeLanguage(language);
+  if (!lang) throw new Error("Language is required");
 
-  if (!normalizedLanguage) {
-    throw new Error("Language is required");
-  }
+  const radioName = capitalize(lang);
 
-  const radioName =
-    normalizedLanguage.charAt(0).toUpperCase() +
-    normalizedLanguage.slice(1);
-
-  const [
-    radioResult,
-    songsResult,
-  ] = await Promise.allSettled([
-    getArtistRadio(
-      radioName,
-      normalizedLanguage
-    ),
-
-    getNewTrending(
-      normalizedLanguage,
-      limit
-    ),
+  const [radioResult, songsResult] = await Promise.allSettled([
+    getArtistRadio(radioName, lang),
+    getNewTrending(lang, limit),
   ]);
 
   const radio =
-    radioResult.status === "fulfilled"
-      ? radioResult.value
-      : null;
+    radioResult.status === "fulfilled" ? radioResult.value : null;
 
-  const songs =
+  const trendingSongs =
     songsResult.status === "fulfilled"
       ? extractSongs(songsResult.value)
       : [];
 
+  // Try to extract songs embedded in the radio response too.
+  const radioSongs = extractRadioSongs(radio);
+
   return {
-    language: normalizedLanguage,
-
-    stationId:
-      getRadioStationId(radio),
-
+    language: lang,
+    stationId: getRadioStationId(radio),
     radio,
-
-    songs,
-
+    songs: trendingSongs.length ? trendingSongs : radioSongs,
     radioError:
-      radioResult.status === "rejected"
-        ? radioResult.reason
-        : null,
-
+      radioResult.status === "rejected" ? radioResult.reason : null,
     songsError:
-      songsResult.status === "rejected"
-        ? songsResult.reason
-        : null,
+      songsResult.status === "rejected" ? songsResult.reason : null,
   };
 };
 
@@ -792,75 +442,34 @@ export const getLanguageRadio = async (
 // LANGUAGE RADIO SHORTCUTS
 // ============================================================
 
-export const getTamilRadio = async (
-  limit = 50
-) => {
-  return getLanguageRadio(
-    "tamil",
-    limit
-  );
-};
+export const getTamilRadio = (limit = DEFAULT_LIMIT) =>
+  getLanguageRadio("tamil", limit);
 
-export const getMalayalamRadio =
-  async (limit = 50) => {
-    return getLanguageRadio(
-      "malayalam",
-      limit
-    );
+export const getMalayalamRadio = (limit = DEFAULT_LIMIT) =>
+  getLanguageRadio("malayalam", limit);
+
+export const getHindiRadio = (limit = DEFAULT_LIMIT) =>
+  getLanguageRadio("hindi", limit);
+
+export const getEnglishRadio = (limit = DEFAULT_LIMIT) =>
+  getLanguageRadio("english", limit);
+
+export const getAllLanguageRadio = async (limit = DEFAULT_LIMIT) => {
+  const [tamil, malayalam, hindi, english] = await Promise.allSettled([
+    getTamilRadio(limit),
+    getMalayalamRadio(limit),
+    getHindiRadio(limit),
+    getEnglishRadio(limit),
+  ]);
+
+  const unwrap = (r) => (r.status === "fulfilled" ? r.value : null);
+
+  return {
+    tamil: unwrap(tamil),
+    malayalam: unwrap(malayalam),
+    hindi: unwrap(hindi),
+    english: unwrap(english),
   };
-
-export const getHindiRadio = async (
-  limit = 50
-) => {
-  return getLanguageRadio(
-    "hindi",
-    limit
-  );
-};
-
-export const getEnglishRadio = async (
-  limit = 50
-) => {
-  return getLanguageRadio(
-    "english",
-    limit
-  );
-};
-
-// ============================================================
-// ALL LANGUAGE RADIO
-// ============================================================
-
-export const getAllLanguageRadio =
-  async (limit = 50) => {
-    const results = await Promise.allSettled([
-      getTamilRadio(limit),
-      getMalayalamRadio(limit),
-      getHindiRadio(limit),
-      getEnglishRadio(limit),
-    ]);
-
-    return {
-      tamil:
-        results[0].status === "fulfilled"
-          ? results[0].value
-          : null,
-
-      malayalam:
-        results[1].status === "fulfilled"
-          ? results[1].value
-          : null,
-
-      hindi:
-        results[2].status === "fulfilled"
-          ? results[2].value
-          : null,
-
-      english:
-        results[3].status === "fulfilled"
-          ? results[3].value
-          : null,
-    };
 };
 
 // ============================================================
@@ -868,23 +477,26 @@ export const getAllLanguageRadio =
 // ============================================================
 
 export default {
+  // Suggestions
   getSuggestionSong,
+  fetchSongSuggestionsByID,
+
+  // Search
   getSearchData,
   getSongbyQuery,
   getArtistbyQuery,
-  getSongById,
-
-  searchAlbumByQuery,
   searchArtistByQuery,
+  searchAlbumByQuery,
+  searchPlayListByQuery,
+
+  // By ID
+  getSongById,
   fetchAlbumByID,
   fetchArtistByID,
-
-  searchPlayListByQuery,
   fetchplaylistsByID,
-
-  fetchSongSuggestionsByID,
   LyricsByID,
 
+  // Trending
   getNewTrending,
   getTamilNewTrending,
   getMalayalamNewTrending,
@@ -892,6 +504,7 @@ export default {
   getEnglishNewTrending,
   getNewTrendingLanguages,
 
+  // Featured Radio
   getFeaturedRadio,
   getTamilFeaturedRadio,
   getMalayalamFeaturedRadio,
@@ -899,6 +512,7 @@ export default {
   getEnglishFeaturedRadio,
   getFeaturedRadioLanguages,
 
+  // Artist Radio
   getArtistRadio,
   getTamilArtistRadio,
   getMalayalamArtistRadio,
@@ -906,13 +520,19 @@ export default {
   getEnglishArtistRadio,
   getAllArtistRadio,
 
+  // Radio Helpers
   getRadioStationId,
   extractRadioSongs,
 
+  // Language Radio
   getLanguageRadio,
   getTamilRadio,
   getMalayalamRadio,
   getHindiRadio,
   getEnglishRadio,
   getAllLanguageRadio,
+
+  // Extractors
+  extractResults,
+  extractSongs,
 };
