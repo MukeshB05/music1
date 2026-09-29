@@ -35,6 +35,8 @@ import { FaPlay } from "react-icons/fa";
 ========================================================= */
 
 const FALLBACK_IMAGE = "/Unknown.png";
+const SONG_LIMIT = 150;
+const MAX_HOME_ITEMS = 50;
 
 /* ---------------------------------------------------------
    Resolve image from any API response shape
@@ -270,29 +272,25 @@ const normalizeSongs = (songs) => {
    Extract song array from API response
 --------------------------------------------------------- */
 const extractSongs = (response) => {
-  if (!response) {
-    return [];
-  }
+  if (!response) return [];
+  if (Array.isArray(response)) return response.filter(Boolean);
 
   const candidates = [
-    response,
-
     response?.data?.songs,
     response?.data?.results,
     response?.data?.items,
+    response?.data?.tracks,
     response?.data?.data,
     response?.data?.new_trending,
-
     response?.songs,
     response?.results,
     response?.items,
+    response?.tracks,
     response?.new_trending,
   ];
 
   for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate.filter(Boolean);
-    }
+    if (Array.isArray(candidate)) return candidate.filter(Boolean);
   }
 
   return [];
@@ -302,9 +300,8 @@ const extractSongs = (response) => {
    Extract general result arrays
 --------------------------------------------------------- */
 const extractResults = (response) => {
-  if (!response) {
-    return [];
-  }
+  if (!response) return [];
+  if (Array.isArray(response)) return response.filter(Boolean);
 
   const candidates = [
     response?.data?.results,
@@ -312,19 +309,16 @@ const extractResults = (response) => {
     response?.data?.albums,
     response?.data?.playlists,
     response?.data?.artists,
-    response?.data,
     response?.results,
     response?.items,
     response?.albums,
     response?.playlists,
     response?.artists,
-    response,
+    response?.data,
   ];
 
   for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate.filter(Boolean);
-    }
+    if (Array.isArray(candidate)) return candidate.filter(Boolean);
   }
 
   return [];
@@ -343,8 +337,6 @@ const extractResults = (response) => {
    - Top Genres & Moods
    - Artist Radio loads a complete playable queue (up to 150)
 ========================================================= */
-
-const SONG_LIMIT = 150;
 
 const uniqueSongs = (songs = []) => {
   const seen = new Set();
@@ -430,6 +422,10 @@ const SmallSongCard = ({ song, songs, onPlay }) => {
           loading="lazy"
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           onError={(event) => {
+            if (event.currentTarget.src.endsWith(FALLBACK_IMAGE)) {
+              event.currentTarget.onerror = null;
+              return;
+            }
             event.currentTarget.src = FALLBACK_IMAGE;
           }}
         />
@@ -535,6 +531,10 @@ const CircleStationCard = ({ station, loading, onPlay }) => {
           loading="lazy"
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
           onError={(event) => {
+            if (event.currentTarget.src.endsWith(FALLBACK_IMAGE)) {
+              event.currentTarget.onerror = null;
+              return;
+            }
             event.currentTarget.src = FALLBACK_IMAGE;
           }}
         />
@@ -577,6 +577,10 @@ const CircleItemCard = ({ item }) => {
           loading="lazy"
           className="h-full w-full object-cover"
           onError={(event) => {
+            if (event.currentTarget.src.endsWith(FALLBACK_IMAGE)) {
+              event.currentTarget.onerror = null;
+              return;
+            }
             event.currentTarget.src = FALLBACK_IMAGE;
           }}
         />
@@ -658,7 +662,12 @@ const MainSection = () => {
   ======================================================= */
   const loadRecentlyPlayed = () => {
     try {
-      const saved = localStorage.getItem("playedSongs");
+      if (typeof window === "undefined" || !window.localStorage) {
+        setRecentlyPlayed([]);
+        return;
+      }
+
+      const saved = window.localStorage.getItem("playedSongs");
       const parsed = saved ? JSON.parse(saved) : [];
 
       if (!Array.isArray(parsed)) {
@@ -699,20 +708,37 @@ const MainSection = () => {
   }, []);
 
   const playQueue = async (song, songs) => {
-    if (!song || typeof playMusic !== "function") return;
+    if (!song || typeof playMusic !== "function") {
+      setError("Music player is not available.");
+      return;
+    }
 
-    const queue = uniqueSongs(songs?.length ? songs : [song]);
+    const sourceQueue =
+      Array.isArray(songs) && songs.length ? songs : [song];
+
+    const queue = uniqueSongs(sourceQueue);
     const playable = queue.filter((item) => Boolean(getSongAudio(item)));
-    const first = playable.find((item) => String(getSongId(item)) === String(getSongId(song))) || playable[0];
 
-    if (!first) return;
+    const requestedId = String(getSongId(song) || "");
+
+    const first =
+      playable.find(
+        (item) => String(getSongId(item) || "") === requestedId
+      ) || playable[0];
+
+    if (!first) {
+      setError("No playable audio URL was found for this song.");
+      return;
+    }
 
     try {
       await playMusic(first, playable);
+      setError("");
     } catch (err) {
       console.error("Song playback error:", err);
+      setError(err?.message || "Unable to play this song.");
     }
-  };
+  };;
 
   const playArtistRadio = async (station) => {
     const query = String(station?.query || station?.language || "").trim();
@@ -783,8 +809,8 @@ const MainSection = () => {
           getSongbyQuery("Tamil editorial picks", 50),
           getSongbyQuery("Tamil hits", 50),
           getSongbyQuery("Chennai hits", 50),
-          searchAlbumByQuery("Tamil, Malayalam"),
-          searchPlayListByQuery("Tamil, Malayalam"),
+          searchAlbumByQuery("Tamil Malayalam", MAX_HOME_ITEMS),
+          searchPlayListByQuery("Tamil Malayalam", MAX_HOME_ITEMS),
           getArtistRadio("Tamil", "tamil"),
           getArtistRadio("Malayalam", "malayalam"),
           getArtistRadio("Hindi", "hindi"),
@@ -799,6 +825,16 @@ const MainSection = () => {
             : null;
 
         const songs = (index) => extractSongs(value(index));
+
+        const fulfilledCount = results.filter(
+          (result) => result?.status === "fulfilled"
+        ).length;
+
+        if (fulfilledCount === 0) {
+          throw new Error(
+            "Music API is unavailable. Please check the API server and try again."
+          );
+        }
 
         const baseTrending = songs(0);
         const latest = songs(1);
@@ -948,7 +984,11 @@ const MainSection = () => {
           <p className="mt-2 max-w-md text-sm opacity-60">{error}</p>
           <button
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                window.location.reload();
+              }
+            }}
             className="mt-4 rounded-full bg-black px-5 py-2 text-sm font-semibold text-white dark:bg-white dark:text-black"
           >
             Try Again
