@@ -22,7 +22,6 @@ import { artistData } from "../genreData";
 import AlbumSlider from "./Sliders/AlbumSlider";
 import PlaylistSlider from "./Sliders/PlaylistSlider";
 import ArtistSlider from "./Sliders/ArtistSlider";
-import SongGrid from "./SongGrid";
 
 import {
   MdOutlineKeyboardArrowLeft,
@@ -332,176 +331,385 @@ const extractResults = (response) => {
 };
 
 /* =========================================================
-   MAIN SECTION
+   PHOTO MODEL HOME PAGE
+   - Screenshot-style compact horizontal music cards
+   - Trending Now
+   - Top Charts
+   - New Releases
+   - Editorial Picks
+   - Radio Stations / Artist Radio
+   - What's Hot In Chennai
+   - Fresh Hits
+   - Top Genres & Moods
+   - Artist Radio loads a complete playable queue (up to 150)
 ========================================================= */
+
+const SONG_LIMIT = 150;
+
+const uniqueSongs = (songs = []) => {
+  const seen = new Set();
+
+  return normalizeSongs(songs).filter((song) => {
+    const id = String(getSongId(song) || "");
+
+    if (!id) return true;
+    if (seen.has(id)) return false;
+
+    seen.add(id);
+    return true;
+  });
+};
+
+const uniqueItems = (items = []) => {
+  const seen = new Set();
+
+  return (Array.isArray(items) ? items : []).filter((item) => {
+    const id = String(item?.id || item?.albumId || item?.playlistId || "");
+
+    if (!id) return true;
+    if (seen.has(id)) return false;
+
+    seen.add(id);
+    return true;
+  });
+};
+
+const getItemTitle = (item, fallback = "Unknown") =>
+  item?.title ||
+  item?.name ||
+  item?.albumName ||
+  item?.playlistName ||
+  fallback;
+
+const getItemSubtitle = (item) =>
+  item?.artist?.name ||
+  item?.artist ||
+  item?.artists?.primary?.map?.((a) => a?.name).filter(Boolean).join(", ") ||
+  item?.primaryArtists ||
+  item?.description ||
+  "JioSaavn";
+
+const SmallSongCard = ({ song, songs, onPlay }) => {
+  const image = resolveImage(
+    song?.image ||
+      song?.images ||
+      song?.album?.image ||
+      song?.album?.images
+  );
+
+  const title = getSongName(song);
+  const artist = getArtistName(song);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPlay?.(song, songs)}
+      className="
+        group
+        min-w-[112px]
+        w-[112px]
+        shrink-0
+        text-left
+        rounded-lg
+        p-1
+        transition-all
+        duration-200
+        hover:-translate-y-1
+        active:scale-[0.98]
+        focus:outline-none
+        focus-visible:ring-2
+        focus-visible:ring-black/40
+        dark:focus-visible:ring-white/40
+      "
+      title={title}
+    >
+      <div className="relative overflow-hidden rounded-md bg-black/5 dark:bg-white/5 aspect-square shadow-sm">
+        <img
+          src={image}
+          alt={title}
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          onError={(event) => {
+            event.currentTarget.src = FALLBACK_IMAGE;
+          }}
+        />
+
+        <span className="absolute bottom-1 right-1 flex h-7 w-7 items-center justify-center rounded-full bg-black text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100">
+          <FaPlay className="ml-0.5 text-[10px]" />
+        </span>
+      </div>
+
+      <p className="mt-1 truncate text-[12px] font-medium leading-4">
+        {title}
+      </p>
+
+      <p className="truncate text-[10px] leading-4 opacity-60">
+        {artist}
+      </p>
+    </button>
+  );
+};
+
+const SongRow = ({ title, songs, scrollRef, onPlay }) => {
+  const safeSongs = Array.isArray(songs) ? songs : [];
+
+  return (
+    <section className="w-full">
+      <div className="mb-2 flex items-center justify-between px-4">
+        <h2 className="text-[18px] font-semibold tracking-tight">
+          {title}
+        </h2>
+
+        {safeSongs.length > 7 && (
+          <div className="hidden gap-1 md:flex">
+            <button
+              type="button"
+              onClick={() => scrollRef?.current?.scrollBy({ left: -500, behavior: "smooth" })}
+              className="rounded-full border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+              aria-label={`Scroll ${title} left`}
+            >
+              <MdOutlineKeyboardArrowLeft />
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollRef?.current?.scrollBy({ left: 500, behavior: "smooth" })}
+              className="rounded-full border border-black/10 px-2 py-1 text-sm dark:border-white/10"
+              aria-label={`Scroll ${title} right`}
+            >
+              <MdOutlineKeyboardArrowRight />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {safeSongs.length ? (
+        <div
+          ref={scrollRef}
+          className="
+            flex
+            w-full
+            gap-1
+            overflow-x-auto
+            px-3
+            pb-2
+            scroll-smooth
+            [scrollbar-width:none]
+            [&::-webkit-scrollbar]:hidden
+          "
+        >
+          {safeSongs.map((song, index) => (
+            <SmallSongCard
+              key={`${getSongId(song) || getSongName(song)}-${index}`}
+              song={song}
+              songs={safeSongs}
+              onPlay={onPlay}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="px-4 text-sm opacity-50">No songs available.</p>
+      )}
+    </section>
+  );
+};
+
+const CircleStationCard = ({ station, loading, onPlay }) => {
+  const image = resolveImage(
+    station?.image ||
+      station?.artist?.image ||
+      station?.artist?.images
+  );
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPlay?.(station)}
+      disabled={loading}
+      className="group flex w-[88px] shrink-0 flex-col items-center text-center disabled:opacity-60"
+      title={`Play ${station?.name || station?.language || "Artist Radio"}`}
+    >
+      <div className="relative h-[76px] w-[76px] overflow-hidden rounded-full border-4 border-black/10 bg-white shadow-md dark:border-white/10 dark:bg-black">
+        <img
+          src={image}
+          alt={station?.name || "Artist Radio"}
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
+          onError={(event) => {
+            event.currentTarget.src = FALLBACK_IMAGE;
+          }}
+        />
+
+        <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/25">
+          {loading ? (
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+          ) : (
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black/80 text-white opacity-0 transition-opacity group-hover:opacity-100">
+              <FaPlay className="ml-0.5 text-[10px]" />
+            </span>
+          )}
+        </span>
+      </div>
+
+      <p className="mt-1 w-full truncate text-[11px] font-medium">
+        {station?.name || station?.language || "Artist Radio"}
+      </p>
+
+      <p className="w-full truncate text-[10px] opacity-60">
+        {station?.subtitle || "Artist Radio"}
+      </p>
+    </button>
+  );
+};
+
+const CircleItemCard = ({ item }) => {
+  const image = resolveImage(
+    item?.image ||
+      item?.images ||
+      item?.artist?.image
+  );
+
+  return (
+    <div className="w-[88px] shrink-0 text-center">
+      <div className="mx-auto h-[76px] w-[76px] overflow-hidden rounded-full border border-black/10 bg-black/5 shadow-sm dark:border-white/10">
+        <img
+          src={image}
+          alt={getItemTitle(item)}
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.src = FALLBACK_IMAGE;
+          }}
+        />
+      </div>
+      <p className="mt-1 truncate text-[11px] font-medium">
+        {getItemTitle(item)}
+      </p>
+      <p className="truncate text-[10px] opacity-60">
+        {getItemSubtitle(item)}
+      </p>
+    </div>
+  );
+};
+
+const CircleRow = ({ title, items }) => (
+  <section className="w-full">
+    <h2 className="mb-2 px-4 text-[18px] font-semibold tracking-tight">
+      {title}
+    </h2>
+
+    {items?.length ? (
+      <div className="flex w-full gap-3 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {items.map((item, index) => (
+          <CircleItemCard
+            key={`${item?.id || item?.name || index}-${index}`}
+            item={item}
+          />
+        ))}
+      </div>
+    ) : (
+      <p className="px-4 text-sm opacity-50">No items available.</p>
+    )}
+  </section>
+);
+
+const GenreCard = ({ name, subtitle }) => (
+  <div className="min-w-[120px] rounded-xl border border-black/10 bg-black/[0.035] px-3 py-4 dark:border-white/10 dark:bg-white/[0.04]">
+    <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-black text-white dark:bg-white dark:text-black">
+      <span className="text-xs">♪</span>
+    </div>
+    <p className="truncate text-sm font-semibold">{name}</p>
+    <p className="truncate text-[10px] opacity-60">{subtitle}</p>
+  </div>
+);
 
 const MainSection = () => {
   const musicContext = useContext(MusicContext) || {};
-
-  const {
-    playMusic,
-  } = musicContext;
-
-  /* =======================================================
-     STATE
-  ======================================================= */
+  const { playMusic } = musicContext;
 
   const [trending, setTrending] = useState([]);
+  const [topCharts, setTopCharts] = useState([]);
+  const [newReleases, setNewReleases] = useState([]);
+  const [editorialSongs, setEditorialSongs] = useState([]);
+  const [chennaiSongs, setChennaiSongs] = useState([]);
+  const [freshHits, setFreshHits] = useState([]);
+  const [albums, setAlbums] = useState([]);
+  const [playlists, setPlaylists] = useState([]);
+  const [artists, setArtists] = useState([]);
+  const [artistRadioStations, setArtistRadioStations] = useState([]);
+  const [radioStations, setRadioStations] = useState([]);
+  const [radioLoading, setRadioLoading] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const [latestSongs, setLatestSongs] =
-    useState([]);
+  const trendingRef = useRef(null);
+  const chartsRef = useRef(null);
+  const releasesRef = useRef(null);
+  const editorialRef = useRef(null);
+  const chennaiRef = useRef(null);
+  const freshRef = useRef(null);
 
-  const [albums, setAlbums] =
-    useState([]);
+  const playQueue = async (song, songs) => {
+    if (!song || typeof playMusic !== "function") return;
 
-  const [artists, setArtists] =
-    useState([]);
+    const queue = uniqueSongs(songs?.length ? songs : [song]);
+    const playable = queue.filter((item) => Boolean(getSongAudio(item)));
+    const first = playable.find((item) => String(getSongId(item)) === String(getSongId(song))) || playable[0];
 
-  const [playlists, setPlaylists] =
-    useState([]);
+    if (!first) return;
 
-  const [artistRadioStations, setArtistRadioStations] =
-    useState([]);
-
-  const [artistRadioLoading, setArtistRadioLoading] =
-    useState("");
-
-  const [artistRadioError, setArtistRadioError] =
-    useState("");
-
-  const [recentlyPlayedSongs, setRecentlyPlayedSongs] =
-    useState([]);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [error, setError] =
-    useState("");
-
-  /* =======================================================
-     REFS
-  ======================================================= */
-
-  const recentlyPlayedScrollRef =
-    useRef(null);
-
-  const latestSongsScrollRef =
-    useRef(null);
-
-  const trendingScrollRef =
-    useRef(null);
-
-  /* =======================================================
-     RECENTLY PLAYED
-  ======================================================= */
-
-  const loadRecentlyPlayed = () => {
     try {
-      const storedSongs =
-        localStorage.getItem("playedSongs");
-
-      if (!storedSongs) {
-        setRecentlyPlayedSongs([]);
-        return;
-      }
-
-      const parsedSongs =
-        JSON.parse(storedSongs);
-
-      if (!Array.isArray(parsedSongs)) {
-        setRecentlyPlayedSongs([]);
-        return;
-      }
-
-      setRecentlyPlayedSongs(
-        normalizeSongs(parsedSongs)
-      );
+      await playMusic(first, playable);
     } catch (err) {
-      console.error(
-        "Unable to read recently played songs:",
-        err
-      );
-
-      setRecentlyPlayedSongs([]);
+      console.error("Song playback error:", err);
     }
   };
 
-  /* =======================================================
-     INITIAL LOAD
-  ======================================================= */
+  const playArtistRadio = async (station) => {
+    const query = String(station?.query || station?.language || "").trim();
+    if (!query || typeof playMusic !== "function") return;
 
-  useEffect(() => {
-    loadRecentlyPlayed();
+    setRadioLoading(station.key || query);
 
-    const handleStorage = () => {
-      loadRecentlyPlayed();
-    };
+    try {
+      let radioSongs = [];
 
-    window.addEventListener(
-      "storage",
-      handleStorage
-    );
+      try {
+        const radioResponse = await getArtistRadio(
+          station.language || query,
+          query
+        );
+        radioSongs = extractSongs(radioResponse);
+      } catch (radioError) {
+        console.warn("Artist radio endpoint failed; using search fallback.", radioError);
+      }
 
-    return () => {
-      window.removeEventListener(
-        "storage",
-        handleStorage
-      );
-    };
-  }, []);
+      /*
+       * IMPORTANT:
+       * /radio/artist can return station metadata/stationId instead
+       * of playable tracks. Never put stationId into <audio src>.
+       * Use the language search as the playlist source when needed.
+       */
+      if (!radioSongs.length) {
+        const searchResponse = await getSongbyQuery(query, SONG_LIMIT);
+        radioSongs = extractSongs(searchResponse);
+      }
 
-  /* =======================================================
-     SCROLL
-  ======================================================= */
+      const queue = uniqueSongs(radioSongs)
+        .filter((song) => Boolean(getSongAudio(song)))
+        .slice(0, SONG_LIMIT);
 
-  const scrollLeft = (ref) => {
-    if (!ref?.current) {
-      return;
+      if (!queue.length) {
+        throw new Error(`No playable ${station.language || query} radio songs found.`);
+      }
+
+      await playMusic(queue[0], queue);
+    } catch (err) {
+      console.error(`${station?.language || query} Artist Radio error:`, err);
+      setError(err?.message || "Unable to play Artist Radio.");
+    } finally {
+      setRadioLoading("");
     }
-
-    ref.current.scrollBy({
-      left: -800,
-      behavior: "smooth",
-    });
   };
-
-  const scrollRight = (ref) => {
-    if (!ref?.current) {
-      return;
-    }
-
-    ref.current.scrollBy({
-      left: 800,
-      behavior: "smooth",
-    });
-  };
-
-  /* =======================================================
-     GREETING
-  ======================================================= */
-
-  const getGreeting = () => {
-    const hour =
-      new Date().getHours();
-
-    if (hour < 12) {
-      return "Good Morning";
-    }
-
-    if (hour < 18) {
-      return "Good Afternoon";
-    }
-
-    if (hour < 21) {
-      return "Good Evening";
-    }
-
-    return "Good Night";
-  };
-
-  /* =======================================================
-     LOAD MAIN DATA
-  ======================================================= */
 
   useEffect(() => {
     let mounted = true;
@@ -511,264 +719,159 @@ const MainSection = () => {
         setLoading(true);
         setError("");
 
-        const [
-          trendingResult,
-          latestResult,
-
-          tamilTrendingResult,
-          malayalamTrendingResult,
-          hindiTrendingResult,
-
-          albumResult,
-          playlistResult,
-
-          tamilArtistRadioResult,
-          malayalamArtistRadioResult,
-          hindiArtistRadioResult,
-          englishArtistRadioResult,
-        ] = await Promise.allSettled([
+        const results = await Promise.allSettled([
           fetchplaylistsByID(10763385),
-
           fetchplaylistsByID(80802063),
-
           getTamilNewTrending(50),
           getMalayalamNewTrending(50),
           getHindiNewTrending(50),
-
-          searchAlbumByQuery(
-            "Tamil, Malayalam"
-          ),
-
-          searchPlayListByQuery(
-            "Tamil, Malayalam"
-          ),
-
+          getSongbyQuery("Tamil top charts", 50),
+          getSongbyQuery("Malayalam top charts", 50),
+          getSongbyQuery("Hindi top charts", 50),
+          getSongbyQuery("Tamil new releases", 50),
+          getSongbyQuery("Malayalam new releases", 50),
+          getSongbyQuery("Tamil editorial picks", 50),
+          getSongbyQuery("Tamil hits", 50),
+          getSongbyQuery("Chennai hits", 50),
+          searchAlbumByQuery("Tamil, Malayalam"),
+          searchPlayListByQuery("Tamil, Malayalam"),
           getArtistRadio("Tamil", "tamil"),
           getArtistRadio("Malayalam", "malayalam"),
           getArtistRadio("Hindi", "hindi"),
           getArtistRadio("English", "english"),
         ]);
 
-        if (!mounted) {
-          return;
-        }
+        if (!mounted) return;
 
-        const unwrap = (result) =>
-          result?.status === "fulfilled"
-            ? result.value
+        const value = (index) =>
+          results[index]?.status === "fulfilled"
+            ? results[index].value
             : null;
 
-        /* =================================================
-           TRENDING
-        ================================================= */
+        const songs = (index) => extractSongs(value(index));
 
-        setTrending(
-          normalizeSongs(
-            extractSongs(
-              unwrap(trendingResult)
-            )
-          )
+        const baseTrending = songs(0);
+        const latest = songs(1);
+        const tamilTrending = songs(2);
+        const malayalamTrending = songs(3);
+        const hindiTrending = songs(4);
+
+        setTrending(uniqueSongs(baseTrending));
+
+        setNewReleases(
+          uniqueSongs([
+            ...latest,
+            ...tamilTrending,
+            ...malayalamTrending,
+            ...hindiTrending,
+          ]).slice(0, 50)
         );
 
-        /* =================================================
-           NEW SONGS
-        ================================================= */
-
-        const existingNewSongs =
-          extractSongs(
-            unwrap(latestResult)
-          );
-
-        const tamilNewSongs =
-          extractSongs(
-            unwrap(
-              tamilTrendingResult
-            )
-          );
-
-        const malayalamNewSongs =
-          extractSongs(
-            unwrap(
-              malayalamTrendingResult
-            )
-          );
-
-        const hindiNewSongs =
-          extractSongs(
-            unwrap(
-              hindiTrendingResult
-            )
-          );
-
-        const mergedNewSongs =
-          normalizeSongs([
-            ...existingNewSongs,
-            ...tamilNewSongs,
-            ...malayalamNewSongs,
-            ...hindiNewSongs,
-          ]);
-
-        /* =================================================
-           REMOVE DUPLICATES
-        ================================================= */
-
-        const seenIds =
-          new Set();
-
-        const uniqueNewSongs =
-          mergedNewSongs.filter(
-            (song) => {
-              const id =
-                getSongId(song);
-
-              if (!id) {
-                return true;
-              }
-
-              const key =
-                String(id);
-
-              if (
-                seenIds.has(key)
-              ) {
-                return false;
-              }
-
-              seenIds.add(key);
-
-              return true;
-            }
-          );
-
-        setLatestSongs(
-          uniqueNewSongs
+        setTopCharts(
+          uniqueSongs([
+            ...songs(5),
+            ...songs(6),
+            ...songs(7),
+          ]).slice(0, 50)
         );
 
-        /* =================================================
-           ALBUMS
-        ================================================= */
+        setEditorialSongs(
+          uniqueSongs(songs(10)).slice(0, 30)
+        );
+
+        setChennaiSongs(
+          uniqueSongs([
+            ...songs(12),
+            ...songs(11),
+          ]).slice(0, 30)
+        );
+
+        setFreshHits(
+          uniqueSongs([
+            ...songs(11),
+            ...songs(8),
+          ]).slice(0, 30)
+        );
 
         setAlbums(
-          extractResults(
-            unwrap(albumResult)
-          )
+          uniqueItems(extractResults(value(13))).slice(0, 30)
         );
-
-        /* =================================================
-           PLAYLISTS
-        ================================================= */
 
         setPlaylists(
-          extractResults(
-            unwrap(playlistResult)
-          )
+          uniqueItems(extractResults(value(14))).slice(0, 30)
         );
 
-        /* =================================================
-           ARTIST RADIO STATIONS
-        ================================================= */
+        const radioDefinitions = [
+          { key: "tamil", language: "Tamil", query: "tamil" },
+          { key: "malayalam", language: "Malayalam", query: "malayalam" },
+          { key: "hindi", language: "Hindi", query: "hindi" },
+          { key: "english", language: "English", query: "english" },
+        ];
 
-        const getStationId = (response) => {
-          if (!response) {
-            return "";
-          }
+        const radioResponses = [
+          value(15),
+          value(16),
+          value(17),
+          value(18),
+        ];
 
-          return (
-            response?.data?.stationId ||
-            response?.stationId ||
-            response?.data?.data?.stationId ||
-            ""
-          );
-        };
+        setArtistRadioStations(
+          radioDefinitions.map((station, index) => {
+            const response = radioResponses[index];
+            const stationId =
+              response?.data?.stationId ||
+              response?.stationId ||
+              response?.data?.data?.stationId ||
+              "";
 
-        const radioStations = [
-          {
-            language: "Tamil",
-            key: "tamil",
-            query: "tamil",
-            response: unwrap(tamilArtistRadioResult),
-          },
-          {
-            language: "Malayalam",
-            key: "malayalam",
-            query: "malayalam",
-            response: unwrap(malayalamArtistRadioResult),
-          },
-          {
-            language: "Hindi",
-            key: "hindi",
-            query: "hindi",
-            response: unwrap(hindiArtistRadioResult),
-          },
-          {
-            language: "English",
-            key: "english",
-            query: "english",
-            response: unwrap(englishArtistRadioResult),
-          },
-        ].map((station) => ({
-          ...station,
-          stationId: getStationId(station.response),
-        }));
-
-        setArtistRadioStations(radioStations);
-        setArtistRadioError("");
-
-        /* =================================================
-           ARTISTS
-        ================================================= */
+            return {
+              ...station,
+              name: `${station.language} Radio`,
+              subtitle: "Complete Artist Radio",
+              stationId,
+              image: resolveImage(
+                response?.data?.image ||
+                  response?.data?.images ||
+                  response?.image
+              ),
+            };
+          })
+        );
 
         let artistList = [];
-
-        if (
-          Array.isArray(
-            artistData
-          )
-        ) {
-          artistList =
-            artistData;
-        } else if (
-          Array.isArray(
-            artistData?.results
-          )
-        ) {
-          artistList =
-            artistData.results;
-        } else if (
-          Array.isArray(
-            artistData?.artists
-          )
-        ) {
-          artistList =
-            artistData.artists;
-        } else if (
-          Array.isArray(
-            artistData?.data
-          )
-        ) {
-          artistList =
-            artistData.data;
+        if (Array.isArray(artistData)) {
+          artistList = artistData;
+        } else if (Array.isArray(artistData?.results)) {
+          artistList = artistData.results;
+        } else if (Array.isArray(artistData?.artists)) {
+          artistList = artistData.artists;
+        } else if (Array.isArray(artistData?.data)) {
+          artistList = artistData.data;
         }
 
-        setArtists(
-          artistList
+        setArtists(artistList.slice(0, 20));
+
+        /* Screenshot-style radio station row.
+           These are visual station entries; clicking Artist Radio
+           is what creates the complete playable queue. */
+        setRadioStations(
+          [
+            { name: "Shiva Shambo", subtitle: "Malayalam Radio", query: "malayalam", image: "/Unknown.png" },
+            { name: "Jai Ganesh", subtitle: "Tamil Radio", query: "tamil", image: "/Unknown.png" },
+            { name: "Neenga Mudiyala", subtitle: "Tamil Radio", query: "tamil", image: "/Unknown.png" },
+            { name: "En Party En Gethu", subtitle: "Tamil Radio", query: "tamil", image: "/Unknown.png" },
+            { name: "Deivam Stuti", subtitle: "Tamil Radio", query: "tamil", image: "/Unknown.png" },
+            { name: "Kanneer Pookkal", subtitle: "Malayalam Radio", query: "malayalam", image: "/Unknown.png" },
+            { name: "Dance Machi", subtitle: "Tamil Radio", query: "tamil", image: "/Unknown.png" },
+          ]
         );
       } catch (err) {
-        console.error(
-          "MainSection Error:",
-          err
-        );
-
+        console.error("MainSection error:", err);
         if (mounted) {
-          setError(
-            err?.message ||
-              "Unable to load music data."
-          );
+          setError(err?.message || "Unable to load music data.");
         }
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     };
 
@@ -779,158 +882,24 @@ const MainSection = () => {
     };
   }, []);
 
-  /* =======================================================
-     PLAY ARTIST RADIO — COMPLETE PLAYLIST
-  ======================================================= */
-
-  const playArtistRadio = async (station) => {
-    if (!station?.query) {
-      return;
-    }
-
-    if (typeof playMusic !== "function") {
-      setArtistRadioError("Music player is not available.");
-      return;
-    }
-
-    const key = station.key || station.query;
-
-    setArtistRadioLoading(key);
-    setArtistRadioError("");
-
-    try {
-      let response = null;
-
-      try {
-        response = await getArtistRadio(
-          station.language,
-          station.query
-        );
-      } catch (radioError) {
-        console.warn(
-          "Artist radio metadata request failed:",
-          radioError
-        );
-      }
-
-      /*
-       * /radio/artist may return station metadata only
-       * (stationId), not playable songs.
-       */
-      let songs = extractSongs(response);
-
-      /*
-       * Build the complete playable radio queue from the
-       * same language query when the radio response contains
-       * no song array. The current API supports up to 150.
-       */
-      if (!songs.length) {
-        const searchResponse = await getSongbyQuery(
-          station.query,
-          150
-        );
-
-        songs = extractSongs(searchResponse);
-      }
-
-      const normalizedQueue = normalizeSongs(songs);
-
-      const playableQueue = normalizedQueue.filter(
-        (song) => Boolean(getSongAudio(song))
-      );
-
-      if (!playableQueue.length) {
-        throw new Error(
-          `No playable ${station.language} radio songs were returned by the API.`
-        );
-      }
-
-      const firstSong = playableQueue[0];
-
-      /*
-       * Pass the COMPLETE queue to MusicContext.
-       * Player handles Next / Previous / Auto-next /
-       * Shuffle / Repeat for the entire radio playlist.
-       */
-      await playMusic(
-        firstSong,
-        playableQueue
-      );
-    } catch (err) {
-      console.error(
-        `${station.language} Artist Radio error:`,
-        err
-      );
-
-      setArtistRadioError(
-        err?.message ||
-          `Unable to load ${station.language} Artist Radio.`
-      );
-    } finally {
-      setArtistRadioLoading("");
-    }
-  };
-
-  /* =======================================================
-     LOADING
-  ======================================================= */
-
   if (loading) {
     return (
-      <div className="min-h-[60vh] w-full flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div
-            className="
-              w-10
-              h-10
-              border-4
-              border-gray-400
-              border-t-transparent
-              rounded-full
-              animate-spin
-            "
-          />
-
-          <p className="text-lg font-medium">
-            Loading...
-          </p>
-        </div>
+      <div className="flex min-h-[60vh] w-full items-center justify-center">
+        <div className="h-9 w-9 animate-spin rounded-full border-4 border-black/20 border-t-black dark:border-white/20 dark:border-t-white" />
       </div>
     );
   }
 
-  /* =======================================================
-     ERROR
-  ======================================================= */
-
-  if (error) {
+  if (error && !trending.length && !newReleases.length) {
     return (
-      <div className="min-h-[60vh] w-full flex items-center justify-center px-5">
-        <div className="text-center max-w-md">
-          <h2 className="text-xl font-semibold text-red-500">
-            Something went wrong
-          </h2>
-
-          <p className="mt-2 text-sm opacity-70 break-words">
-            {error}
-          </p>
-
+      <div className="flex min-h-[60vh] w-full items-center justify-center px-5 text-center">
+        <div>
+          <p className="font-semibold text-red-500">Unable to load MusicMax</p>
+          <p className="mt-2 max-w-md text-sm opacity-60">{error}</p>
           <button
             type="button"
-            onClick={() =>
-              window.location.reload()
-            }
-            className="
-              mt-5
-              px-5
-              py-2
-              rounded-lg
-              bg-white
-              text-black
-              font-medium
-              hover:opacity-80
-              transition
-            "
+            onClick={() => window.location.reload()}
+            className="mt-4 rounded-full bg-black px-5 py-2 text-sm font-semibold text-white dark:bg-white dark:text-black"
           >
             Try Again
           </button>
@@ -939,643 +908,163 @@ const MainSection = () => {
     );
   }
 
-  /* =======================================================
-     COMBINED PLAYER QUEUE
-  ======================================================= */
-
-  const combinedQueue =
-    normalizeSongs([
-      ...recentlyPlayedSongs,
-      ...trending,
-      ...latestSongs,
-    ]);
-
-  /* =======================================================
-     RENDER
-  ======================================================= */
+  const genres = [
+    ["Tamil", "Tamil Hits"],
+    ["Malayalam", "Malayalam Hits"],
+    ["Hindi", "Bollywood"],
+    ["English", "International"],
+    ["Melody", "Soft & Calm"],
+    ["Romance", "Love Songs"],
+    ["Party", "Dance Hits"],
+    ["Devotional", "Spiritual"],
+  ];
 
   return (
     <main
       className="
-        pt-[3rem]
-        lg:pt-5
-        my-[2rem]
-        mt-[5rem]
-        lg:my-[4rem]
-        flex
-        flex-col
-        items-center
-        overflow-x-clip
-        gap-[0.3rem]
+        mt-[4.5rem]
         w-full
+        overflow-x-hidden
+        pb-24
+        pt-4
+        lg:mt-16
+        lg:pb-10
       "
     >
-      {/* ===================================================
-          GREETING
-      =================================================== */}
+      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-7">
+        <SongRow
+          title="Trending Now"
+          songs={trending}
+          scrollRef={trendingRef}
+          onPlay={playQueue}
+        />
 
-      <div
-        className="
-          hidden
-          lg:block
-          text-2xl
-          w-full
-          font-semibold
-          lg:ml-[5.5rem]
-          m-1
-        "
-      >
-        {getGreeting()}
-      </div>
+        <SongRow
+          title="Top Charts"
+          songs={topCharts}
+          scrollRef={chartsRef}
+          onPlay={playQueue}
+        />
 
-      {/* ===================================================
-          RECENTLY PLAYED
-      =================================================== */}
+        <SongRow
+          title="New Releases"
+          songs={newReleases}
+          scrollRef={releasesRef}
+          onPlay={playQueue}
+        />
 
-      {recentlyPlayedSongs.length >
-        0 && (
-        <section className="flex flex-col justify-center items-center w-full">
-          <h2
-            className="
-              m-4
-              mt-0
-              text-xl
-              lg:text-2xl
-              font-semibold
-              w-full
-              ml-[3.5rem]
-              lg:ml-[6.5rem]
-            "
-          >
-            Recently Played
-          </h2>
-
-          <div className="flex justify-center items-center gap-3 w-full">
-            <button
-              type="button"
-              aria-label="Scroll recently played left"
-              onClick={() =>
-                scrollLeft(
-                  recentlyPlayedScrollRef
-                )
-              }
-              className="
-                text-3xl
-                hover:scale-125
-                transition-all
-                duration-200
-                cursor-pointer
-                h-[9rem]
-                arrow-btn
-                hidden
-                lg:flex
-                items-center
-                justify-center
-              "
-            >
-              <MdOutlineKeyboardArrowLeft />
-            </button>
-
-            <div
-              ref={
-                recentlyPlayedScrollRef
-              }
-              className="
-                grid
-                grid-rows-1
-                grid-flow-col
-                justify-start
-                overflow-x-auto
-                scroll-hide
-                items-center
-                gap-3
-                lg:gap-2
-                w-full
-                px-3
-                lg:px-0
-                scroll-smooth
-              "
-            >
-              {recentlyPlayedSongs.map(
-                (
-                  song,
-                  index
-                ) => (
-                  <SongGrid
-                    key={
-                      getSongId(
-                        song
-                      ) ||
-                      index
-                    }
-                    {...song}
-                    song={song}
-                    songs={
-                      recentlyPlayedSongs
-                    }
-                  />
-                )
-              )}
-            </div>
-
-            <button
-              type="button"
-              aria-label="Scroll recently played right"
-              onClick={() =>
-                scrollRight(
-                  recentlyPlayedScrollRef
-                )
-              }
-              className="
-                text-3xl
-                hover:scale-125
-                transition-all
-                duration-200
-                cursor-pointer
-                h-[9rem]
-                arrow-btn
-                hidden
-                lg:flex
-                items-center
-                justify-center
-              "
-            >
-              <MdOutlineKeyboardArrowRight />
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* ===================================================
-          NEW SONGS
-      =================================================== */}
-
-      <section className="flex flex-col items-center w-full">
-        <h2
-          className="
-            m-4
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[3.5rem]
-            lg:ml-[6.5rem]
-          "
-        >
-          New Songs
-        </h2>
-
-        <div className="flex justify-center items-center gap-3 w-full">
-          <button
-            type="button"
-            aria-label="Scroll new songs left"
-            onClick={() =>
-              scrollLeft(
-                latestSongsScrollRef
-              )
-            }
-            className="
-              text-3xl
-              hover:scale-125
-              transition-all
-              duration-200
-              cursor-pointer
-              h-[9rem]
-              arrow-btn
-              hidden
-              lg:flex
-              items-center
-              justify-center
-            "
-          >
-            <MdOutlineKeyboardArrowLeft />
-          </button>
-
-          <div
-            ref={
-              latestSongsScrollRef
-            }
-            className="
-              grid
-              grid-rows-1
-              lg:grid-rows-2
-              grid-flow-col
-              justify-start
-              overflow-x-auto
-              scroll-hide
-              items-center
-              gap-3
-              lg:gap-2
-              w-full
-              px-3
-              lg:px-0
-              scroll-smooth
-            "
-          >
-            {latestSongs.map(
-              (
-                song,
-                index
-              ) => (
-                <SongGrid
-                  key={
-                    getSongId(
-                      song
-                    ) ||
-                    index
-                  }
-                  {...song}
-                  song={song}
-                  songs={
-                    latestSongs
-                  }
-                />
-              )
-            )}
+        <section className="w-full px-3">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <h2 className="text-[18px] font-semibold tracking-tight">
+              Editorial Picks
+            </h2>
           </div>
 
-          <button
-            type="button"
-            aria-label="Scroll new songs right"
-            onClick={() =>
-              scrollRight(
-                latestSongsScrollRef
-              )
-            }
-            className="
-              text-3xl
-              hover:scale-125
-              transition-all
-              duration-200
-              cursor-pointer
-              h-[9rem]
-              arrow-btn
-              hidden
-              lg:flex
-              items-center
-              justify-center
-            "
-          >
-            <MdOutlineKeyboardArrowRight />
-          </button>
-        </div>
-      </section>
-
-      <br />
-
-      {/* ===================================================
-          TODAY TRENDING
-      =================================================== */}
-
-      <section className="flex flex-col justify-center items-center w-full">
-        <h2
-          className="
-            m-4
-            mt-0
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[3.5rem]
-            lg:ml-[6.5rem]
-          "
-        >
-          Today Trending
-        </h2>
-
-        <div className="flex justify-center items-center gap-3 w-full">
-          <button
-            type="button"
-            aria-label="Scroll trending songs left"
-            onClick={() =>
-              scrollLeft(
-                trendingScrollRef
-              )
-            }
-            className="
-              text-3xl
-              hover:scale-125
-              transition-all
-              duration-200
-              cursor-pointer
-              h-[9rem]
-              arrow-btn
-              hidden
-              lg:flex
-              items-center
-              justify-center
-            "
-          >
-            <MdOutlineKeyboardArrowLeft />
-          </button>
-
-          <div
-            ref={
-              trendingScrollRef
-            }
-            className="
-              grid
-              grid-rows-1
-              sm:grid-rows-2
-              grid-flow-col
-              justify-start
-              overflow-x-auto
-              scroll-hide
-              items-center
-              gap-3
-              lg:gap-2
-              w-full
-              px-3
-              lg:px-0
-              scroll-smooth
-            "
-          >
-            {trending.map(
-              (
-                song,
-                index
-              ) => (
-                <SongGrid
-                  key={
-                    getSongId(
-                      song
-                    ) ||
-                    index
-                  }
-                  {...song}
-                  song={song}
-                  songs={
-                    trending
-                  }
-                />
-              )
-            )}
-          </div>
-
-          <button
-            type="button"
-            aria-label="Scroll trending songs right"
-            onClick={() =>
-              scrollRight(
-                trendingScrollRef
-              )
-            }
-            className="
-              text-3xl
-              hover:scale-125
-              transition-all
-              duration-200
-              cursor-pointer
-              h-[9rem]
-              arrow-btn
-              hidden
-              lg:flex
-              items-center
-              justify-center
-            "
-          >
-            <MdOutlineKeyboardArrowRight />
-          </button>
-        </div>
-      </section>
-
-      <br />
-
-      {/* ===================================================
-          ARTIST RADIO
-      =================================================== */}
-
-      {artistRadioStations.length > 0 && (
-        <section className="w-full">
-          <h2
-            className="
-              m-4
-              mt-0
-              text-xl
-              lg:text-2xl
-              font-semibold
-              w-full
-              ml-[1rem]
-              lg:ml-[3.5rem]
-            "
-          >
-            Artist Radio
-          </h2>
-
-          {artistRadioError && (
-            <p
-              className="
-                mx-4
-                mb-3
-                rounded-xl
-                border
-                border-red-500/20
-                bg-red-500/10
-                px-4
-                py-3
-                text-sm
-                text-red-500
-              "
-            >
-              {artistRadioError}
-            </p>
+          {playlists.length ? (
+            <PlaylistSlider playlists={playlists.slice(0, 12)} />
+          ) : (
+            <SongRow
+              title="Editorial Picks"
+              songs={editorialSongs}
+              scrollRef={editorialRef}
+              onPlay={playQueue}
+            />
           )}
+        </section>
 
-          <div
-            className="
-              grid
-              grid-cols-1
-              sm:grid-cols-2
-              gap-3
-              px-3
-              lg:px-3
-              w-full
-            "
-          >
-            {artistRadioStations.map((station) => {
-              const isLoading =
-                artistRadioLoading === station.key;
+        <section className="w-full">
+          <h2 className="mb-2 px-4 text-[18px] font-semibold tracking-tight">
+            Radio Stations
+          </h2>
 
-              return (
-                <div
-                  key={station.key}
-                  className="
-                    flex
-                    items-center
-                    justify-between
-                    gap-4
-                    rounded-2xl
-                    border
-                    border-black/10
-                    dark:border-white/10
-                    bg-black/[0.03]
-                    dark:bg-white/[0.05]
-                    px-4
-                    py-4
-                    shadow-sm
-                    transition
-                    hover:shadow-md
-                  "
-                >
-                  <div className="min-w-0">
-                    <h3 className="truncate text-base font-semibold">
-                      {station.language} Radio
-                    </h3>
-
-                    <p className="mt-1 text-xs opacity-60">
-                      Artist radio playlist
-                    </p>
-
-                    <p className="mt-1 text-xs opacity-50">
-                      Complete song queue • up to 150 songs
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    aria-label={`Play ${station.language} Artist Radio`}
-                    disabled={Boolean(artistRadioLoading)}
-                    onClick={() =>
-                      playArtistRadio(station)
-                    }
-                    className="
-                      flex
-                      h-11
-                      w-11
-                      shrink-0
-                      items-center
-                      justify-center
-                      rounded-full
-                      bg-black
-                      text-white
-                      shadow-lg
-                      transition
-                      hover:scale-105
-                      disabled:cursor-not-allowed
-                      disabled:opacity-60
-                    "
-                  >
-                    {isLoading ? (
-                      <span
-                        className="
-                          h-5
-                          w-5
-                          rounded-full
-                          border-2
-                          border-white
-                          border-t-transparent
-                          animate-spin
-                        "
-                      />
-                    ) : (
-                      <FaPlay className="ml-0.5 text-sm" />
-                    )}
-                  </button>
-                </div>
-              );
-            })}
+          <div className="flex w-full gap-3 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {radioStations.map((station, index) => (
+              <CircleStationCard
+                key={`${station.name}-${index}`}
+                station={station}
+                loading={radioLoading === station.query}
+                onPlay={playArtistRadio}
+              />
+            ))}
           </div>
         </section>
-      )}
 
-      <br />
+        <section className="w-full">
+          <div className="mb-2 flex items-center justify-between px-4">
+            <div>
+              <h2 className="text-[18px] font-semibold tracking-tight">
+                Artist Radio
+              </h2>
+              <p className="text-[11px] opacity-50">
+                Tap any station to start the complete songs playlist
+              </p>
+            </div>
+          </div>
 
-      {/* ===================================================
-          TOP ALBUMS
-      =================================================== */}
+          <div className="flex w-full gap-3 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {artistRadioStations.map((station) => (
+              <CircleStationCard
+                key={station.key}
+                station={station}
+                loading={radioLoading === station.key}
+                onPlay={playArtistRadio}
+              />
+            ))}
+          </div>
+        </section>
 
-      <section className="w-full">
-        <h2
-          className="
-            m-4
-            mt-0
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[1rem]
-            lg:ml-[3rem]
-          "
-        >
-          Top Albums
-        </h2>
+        <SongRow
+          title="What's Hot In Chennai"
+          songs={chennaiSongs}
+          scrollRef={chennaiRef}
+          onPlay={playQueue}
+        />
 
-        {albums.length > 0 ? (
-          <AlbumSlider
-            albums={albums}
-          />
-        ) : (
-          <p className="px-5 opacity-60">
-            No albums available.
-          </p>
-        )}
-      </section>
+        <SongRow
+          title="Fresh Hits"
+          songs={freshHits}
+          scrollRef={freshRef}
+          onPlay={playQueue}
+        />
 
-      <br />
+        <section className="w-full px-3">
+          <h2 className="mb-2 px-1 text-[18px] font-semibold tracking-tight">
+            Top Albums
+          </h2>
+          {albums.length ? (
+            <AlbumSlider albums={albums.slice(0, 18)} />
+          ) : (
+            <p className="px-1 text-sm opacity-50">No albums available.</p>
+          )}
+        </section>
 
-      {/* ===================================================
-          TOP ARTISTS
-      =================================================== */}
+        <section className="w-full px-3">
+          <h2 className="mb-2 px-1 text-[18px] font-semibold tracking-tight">
+            Top Artists
+          </h2>
+          {artists.length ? (
+            <ArtistSlider artists={artists.slice(0, 18)} />
+          ) : (
+            <p className="px-1 text-sm opacity-50">No artists available.</p>
+          )}
+        </section>
 
-      <section className="w-full">
-        <h2
-          className="
-            pr-1
-            m-4
-            mt-0
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[1rem]
-            lg:ml-[3.5rem]
-          "
-        >
-          Top Artists
-        </h2>
+        <section className="w-full">
+          <h2 className="mb-2 px-4 text-[18px] font-semibold tracking-tight">
+            Top Genres &amp; Moods
+          </h2>
 
-        {artists.length > 0 ? (
-          <ArtistSlider
-            artists={artists}
-          />
-        ) : (
-          <p className="px-5 opacity-60">
-            No artists available.
-          </p>
-        )}
-      </section>
-
-      <br />
-
-      {/* ===================================================
-          TOP PLAYLISTS
-      =================================================== */}
-
-      <section className="w-full flex flex-col gap-3">
-        <h2
-          className="
-            m-1
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[1rem]
-            lg:ml-[2.8rem]
-          "
-        >
-          Top Playlists
-        </h2>
-
-        {playlists.length > 0 ? (
-          <PlaylistSlider
-            playlists={playlists}
-          />
-        ) : (
-          <p className="px-5 opacity-60">
-            No playlists available.
-          </p>
-        )}
-      </section>
+          <div className="flex w-full gap-3 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {genres.map(([name, subtitle]) => (
+              <GenreCard
+                key={name}
+                name={name}
+                subtitle={subtitle}
+              />
+            ))}
+          </div>
+        </section>
+      </div>
     </main>
   );
 };
