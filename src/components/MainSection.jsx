@@ -12,9 +12,7 @@ import {
   getTamilNewTrending,
   getMalayalamNewTrending,
   getHindiNewTrending,
-  getTamilFeaturedRadio,
-  getMalayalamFeaturedRadio,
-  getHindiFeaturedRadio,
+  getArtistRadio,
 } from "../../fetch";
 
 import MusicContext from "../context/MusicContext";
@@ -30,7 +28,7 @@ import {
   MdOutlineKeyboardArrowRight,
 } from "react-icons/md";
 
-import { FaPlay, FaPause } from "react-icons/fa";
+import { FaPlay } from "react-icons/fa";
 
 /* =========================================================
    HELPERS
@@ -332,37 +330,6 @@ const extractResults = (response) => {
   return [];
 };
 
-/* ---------------------------------------------------------
-   Get station ID
---------------------------------------------------------- */
-const getStationId = (response) => {
-  return (
-    response?.data?.stationId ||
-    response?.data?.station_id ||
-    response?.stationId ||
-    response?.station_id ||
-    ""
-  );
-};
-
-/* ---------------------------------------------------------
-   Station image
---------------------------------------------------------- */
-const getStationImage = (language) => {
-  const images = {
-    tamil:
-      "https://c.saavncdn.com/featured/Tamil-Hits_500x500.jpg",
-
-    malayalam:
-      "https://c.saavncdn.com/featured/Malayalam-Hits_500x500.jpg",
-
-    hindi:
-      "https://c.saavncdn.com/featured/Hindi-Hits_500x500.jpg",
-  };
-
-  return images[language] || FALLBACK_IMAGE;
-};
-
 /* =========================================================
    MAIN SECTION
 ========================================================= */
@@ -372,8 +339,6 @@ const MainSection = () => {
 
   const {
     playMusic,
-    currentSong,
-    isPlaying,
   } = musicContext;
 
   /* =======================================================
@@ -394,17 +359,10 @@ const MainSection = () => {
   const [playlists, setPlaylists] =
     useState([]);
 
-  const [featuredStations, setFeaturedStations] =
-    useState([]);
+  const [artistRadio, setArtistRadio] = useState([]);
 
   const [recentlyPlayedSongs, setRecentlyPlayedSongs] =
     useState([]);
-
-  const [stationLoading, setStationLoading] =
-    useState("");
-
-  const [stationError, setStationError] =
-    useState("");
 
   const [loading, setLoading] =
     useState(true);
@@ -559,6 +517,7 @@ const MainSection = () => {
           tamilRadioResult,
           malayalamRadioResult,
           hindiRadioResult,
+          englishRadioResult,
         ] = await Promise.allSettled([
           fetchplaylistsByID(10763385),
 
@@ -576,9 +535,10 @@ const MainSection = () => {
             "Tamil, Malayalam"
           ),
 
-          getTamilFeaturedRadio(),
-          getMalayalamFeaturedRadio(),
-          getHindiFeaturedRadio(),
+          getArtistRadio("Tamil", "tamil"),
+          getArtistRadio("Malayalam", "malayalam"),
+          getArtistRadio("Hindi", "hindi"),
+          getArtistRadio("English", "english"),
         ]);
 
         if (!mounted) {
@@ -697,52 +657,33 @@ const MainSection = () => {
         );
 
         /* =================================================
-           FEATURED RADIO
+           ARTIST RADIO
         ================================================= */
 
-        const radioItems = [
+        const artistRadioItems = [
           {
             language: "Tamil",
             key: "tamil",
-            response:
-              unwrap(
-                tamilRadioResult
-              ),
+            response: unwrap(tamilRadioResult),
           },
-
           {
             language: "Malayalam",
             key: "malayalam",
-            response:
-              unwrap(
-                malayalamRadioResult
-              ),
+            response: unwrap(malayalamRadioResult),
           },
-
           {
             language: "Hindi",
             key: "hindi",
-            response:
-              unwrap(
-                hindiRadioResult
-              ),
+            response: unwrap(hindiRadioResult),
           },
-        ]
-          .map((item) => ({
-            ...item,
-            stationId:
-              getStationId(
-                item.response
-              ),
-          }))
-          .filter(
-            (item) =>
-              item.stationId
-          );
+          {
+            language: "English",
+            key: "english",
+            response: unwrap(englishRadioResult),
+          },
+        ].filter((item) => item.response);
 
-        setFeaturedStations(
-          radioItems
-        );
+        setArtistRadio(artistRadioItems);
 
         /* =================================================
            ARTISTS
@@ -808,146 +749,6 @@ const MainSection = () => {
       mounted = false;
     };
   }, []);
-
-  /* =======================================================
-     PLAY STATION
-     
-     IMPORTANT:
-     /radio/featured returns station metadata.
-     It does NOT return an audio URL.
-
-     Therefore we create a playable station MIX from
-     the corresponding language's new-trending queue.
-  ======================================================= */
-
-  const playStation = async (
-    station
-  ) => {
-    if (!station?.key) {
-      return;
-    }
-
-    if (
-      typeof playMusic !==
-      "function"
-    ) {
-      console.error(
-        "MusicContext.playMusic is not available."
-      );
-
-      return;
-    }
-
-    const language =
-      station.key;
-
-    setStationError("");
-
-    setStationLoading(
-      language
-    );
-
-    try {
-      let response;
-
-      if (
-        language === "tamil"
-      ) {
-        response =
-          await getTamilNewTrending(
-            50
-          );
-      } else if (
-        language === "malayalam"
-      ) {
-        response =
-          await getMalayalamNewTrending(
-            50
-          );
-      } else if (
-        language === "hindi"
-      ) {
-        response =
-          await getHindiNewTrending(
-            50
-          );
-      } else {
-        throw new Error(
-          "Unsupported radio station."
-        );
-      }
-
-      const songs =
-        normalizeSongs(
-          extractSongs(response)
-        );
-
-      /* -----------------------------------------------
-         Only keep songs with playable audio
-      ------------------------------------------------ */
-
-      const playableSongs =
-        songs.filter(
-          (song) =>
-            Boolean(
-              getSongAudio(song)
-            )
-        );
-
-      if (
-        playableSongs.length === 0
-      ) {
-        throw new Error(
-          `${station.language} station has no playable songs right now.`
-        );
-      }
-
-      const firstSong =
-        playableSongs[0];
-
-      const firstAudio =
-        getSongAudio(
-          firstSong
-        );
-
-      if (!firstAudio) {
-        throw new Error(
-          "No playable audio URL found."
-        );
-      }
-
-      /*
-       * Pass the COMPLETE station queue
-       * to MusicContext.
-       *
-       * This makes:
-       * Next
-       * Previous
-       * Auto-next
-       * Repeat
-       * Shuffle
-       *
-       * work with the station mix.
-       */
-
-      playMusic(
-        firstSong,
-        playableSongs
-      );
-    } catch (err) {
-      console.error(
-        `${station.language} station error:`,
-        err
-      );
-
-      setStationError(
-        err?.message ||
-          `Unable to play ${station.language} station.`
-      );
-    } finally {
-      setStationLoading("");
-    }
-  };
 
   /* =======================================================
      LOADING
@@ -1419,253 +1220,92 @@ const MainSection = () => {
 
       <br />
 
+
+
       {/* ===================================================
-          RECOMMENDED ARTIST STATIONS
+          ARTIST RADIO
       =================================================== */}
 
-      <section className="w-full px-3 lg:px-12">
-        <h2
-          className="
-            m-4
-            mt-0
-            text-xl
-            lg:text-2xl
-            font-semibold
-          "
-        >
-          Recommended Artist Stations
-        </h2>
-
-        {stationError && (
-          <div
+      {artistRadio.length > 0 && (
+        <section className="w-full px-3 lg:px-12">
+          <h2
             className="
-              mx-4
-              mb-4
-              rounded-lg
-              bg-red-500/10
-              border
-              border-red-500/20
-              px-4
-              py-3
-              text-sm
-              text-red-500
+              m-4
+              mt-0
+              text-xl
+              lg:text-2xl
+              font-semibold
             "
           >
-            {stationError}
-          </div>
-        )}
+            Artist Radio
+          </h2>
 
-        {featuredStations.length >
-        0 ? (
-          <div
-            className="
-              grid
-              grid-cols-1
-              sm:grid-cols-2
-              lg:grid-cols-3
-              gap-4
-            "
-          >
-            {featuredStations.map(
-              (station) => {
-                const isLoading =
-                  stationLoading ===
-                  station.key;
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {artistRadio.map((radio) => {
+              const stationId =
+                radio.response?.data?.stationId ||
+                radio.response?.stationId ||
+                "";
 
-                const isCurrentStation =
-                  currentSong &&
-                  station.key ===
-                    String(
-                      currentSong?.language ||
-                        ""
-                    ).toLowerCase();
+              return (
+                <div
+                  key={radio.key}
+                  className="
+                    rounded-2xl
+                    border
+                    border-black/10
+                    dark:border-white/10
+                    bg-black/[0.04]
+                    dark:bg-white/[0.05]
+                    p-4
+                  "
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold truncate">
+                        {radio.language} Radio
+                      </h3>
 
-                return (
-                  <div
-                    key={
-                      station.key
-                    }
-                    className="
-                      group
-                      overflow-hidden
-                      rounded-2xl
-                      border
-                      border-black/10
-                      dark:border-white/10
-                      bg-black/[0.04]
-                      dark:bg-white/[0.05]
-                      shadow-sm
-                      hover:shadow-xl
-                      transition-all
-                      duration-300
-                    "
-                  >
-                    <div className="relative">
-                      <img
-                        src={getStationImage(
-                          station.key
-                        )}
-                        alt={`${station.language} Radio`}
-                        className="
-                          w-full
-                          h-44
-                          object-cover
-                          transition-transform
-                          duration-500
-                          group-hover:scale-105
-                        "
-                        onError={(
-                          event
-                        ) => {
-                          event.currentTarget.src =
-                            FALLBACK_IMAGE;
-                        }}
-                      />
-
-                      <div
-                        className="
-                          absolute
-                          inset-0
-                          bg-gradient-to-t
-                          from-black/80
-                          via-black/20
-                          to-transparent
-                        "
-                      />
-
-                      <div
-                        className="
-                          absolute
-                          left-4
-                          right-4
-                          bottom-4
-                          text-white
-                        "
-                      >
-                        <p className="text-lg font-bold">
-                          {station.language} Radio
-                        </p>
-
-                        <p className="text-xs opacity-80">
-                          Recommended {station.language} music
-                        </p>
-                      </div>
+                      <p className="text-xs opacity-60 mt-1">
+                        Artist radio
+                      </p>
                     </div>
 
-                    <div className="p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="font-semibold truncate">
-                            {station.language} Station
-                          </h3>
-
-                          <p className="text-xs opacity-60 mt-1">
-                            {station.stationId
-                              ? "Featured station"
-                              : "Music mix"}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={
-                            isLoading
-                          }
-                          onClick={() =>
-                            playStation(
-                              station
-                            )
-                          }
-                          aria-label={`Play ${station.language} station`}
-                          className="
-                            shrink-0
-                            w-11
-                            h-11
-                            rounded-full
-                            flex
-                            items-center
-                            justify-center
-                            bg-black
-                            text-white
-                            dark:bg-white
-                            dark:text-black
-                            hover:scale-105
-                            active:scale-95
-                            transition
-                            disabled:opacity-50
-                            disabled:cursor-not-allowed
-                          "
-                        >
-                          {isLoading ? (
-                            <span
-                              className="
-                                w-5
-                                h-5
-                                border-2
-                                border-current
-                                border-t-transparent
-                                rounded-full
-                                animate-spin
-                              "
-                            />
-                          ) : (
-                            <FaPlay className="ml-0.5 text-sm" />
-                          )}
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={
-                          isLoading
-                        }
-                        onClick={() =>
-                          playStation(
-                            station
-                          )
-                        }
-                        className="
-                          mt-3
-                          w-full
-                          rounded-xl
-                          py-2.5
-                          text-sm
-                          font-medium
-                          bg-black/10
-                          dark:bg-white/10
-                          hover:bg-black/15
-                          dark:hover:bg-white/15
-                          transition
-                          disabled:opacity-50
-                        "
-                      >
-                        {isLoading
-                          ? "Loading Station..."
-                          : "Play Station Mix"}
-                      </button>
-                    </div>
+                    <span
+                      className="
+                        shrink-0
+                        w-10
+                        h-10
+                        rounded-full
+                        flex
+                        items-center
+                        justify-center
+                        bg-black
+                        text-white
+                        dark:bg-white
+                        dark:text-black
+                      "
+                      title={
+                        stationId
+                          ? "Radio station available"
+                          : "Radio information"
+                      }
+                    >
+                      <FaPlay className="text-xs ml-0.5" />
+                    </span>
                   </div>
-                );
-              }
-            )}
+
+                  {stationId && (
+                    <p className="mt-3 text-[11px] opacity-50 break-all">
+                      Station ID: {stationId}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ) : (
-          <div
-            className="
-              mx-4
-              rounded-xl
-              border
-              border-black/10
-              dark:border-white/10
-              p-5
-              text-sm
-              opacity-70
-            "
-          >
-            Radio stations are currently unavailable.
-          </div>
-        )}
-      </section>
+        </section>
+      )}
 
       <br />
 
