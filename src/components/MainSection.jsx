@@ -10,6 +10,7 @@ import {
   fetchplaylistsByID,
   searchAlbumByQuery,
   searchPlayListByQuery,
+  getMalayalamNewTrending,
 } from "../../fetch";
 
 import AlbumSlider from "./Sliders/AlbumSlider";
@@ -22,9 +23,8 @@ import {
   MdOutlineKeyboardArrowRight,
 } from "react-icons/md";
 
-import { artistData } from "../genreData";
+import artistData from "../genreData";
 import MusicContext from "../context/MusicContext";
-
 
 // ============================================================
 // HELPERS
@@ -69,7 +69,6 @@ const getImage = (value) => {
   return FALLBACK_IMAGE;
 };
 
-
 const getSongId = (song) => {
   if (!song) {
     return null;
@@ -84,7 +83,6 @@ const getSongId = (song) => {
     null
   );
 };
-
 
 const getSongAudio = (song) => {
   if (!song) {
@@ -106,7 +104,6 @@ const getSongAudio = (song) => {
   );
 };
 
-
 const getSongName = (song) => {
   if (!song) {
     return "Unknown Song";
@@ -120,7 +117,6 @@ const getSongName = (song) => {
     "Unknown Song"
   );
 };
-
 
 const getArtists = (song) => {
   if (!song) {
@@ -162,7 +158,6 @@ const getArtists = (song) => {
 
   return "";
 };
-
 
 const normalizeSong = (song) => {
   if (!song || typeof song !== "object") {
@@ -209,7 +204,6 @@ const normalizeSong = (song) => {
   };
 };
 
-
 const normalizeSongs = (songs) => {
   if (!Array.isArray(songs)) {
     return [];
@@ -243,7 +237,6 @@ const normalizeSongs = (songs) => {
   return output;
 };
 
-
 const extractSongs = (response) => {
   if (!response) {
     return [];
@@ -265,6 +258,10 @@ const extractSongs = (response) => {
     return response.data.items;
   }
 
+  if (Array.isArray(response?.data?.data)) {
+    return response.data.data;
+  }
+
   if (Array.isArray(response?.songs)) {
     return response.songs;
   }
@@ -279,7 +276,6 @@ const extractSongs = (response) => {
 
   return [];
 };
-
 
 const extractResults = (response) => {
   if (!response) {
@@ -302,6 +298,10 @@ const extractResults = (response) => {
     return response.data.playlists;
   }
 
+  if (Array.isArray(response?.data?.items)) {
+    return response.data.items;
+  }
+
   if (Array.isArray(response?.results)) {
     return response.results;
   }
@@ -317,6 +317,50 @@ const extractResults = (response) => {
   return [];
 };
 
+// ============================================================
+// ARTIST HELPERS
+// ============================================================
+
+const getArtistId = (artist) => {
+  if (!artist) {
+    return null;
+  }
+
+  return (
+    artist.id ||
+    artist.artistId ||
+    artist.artist_id ||
+    artist.token ||
+    null
+  );
+};
+
+const getArtistName = (artist) => {
+  if (!artist) {
+    return "Unknown Artist";
+  }
+
+  return (
+    artist.name ||
+    artist.title ||
+    artist.artistName ||
+    artist.artist_name ||
+    "Unknown Artist"
+  );
+};
+
+const getArtistImage = (artist) => {
+  if (!artist) {
+    return FALLBACK_IMAGE;
+  }
+
+  return getImage(
+    artist.image ||
+      artist.images ||
+      artist.imageUrl ||
+      artist.image_url
+  );
+};
 
 // ============================================================
 // MAIN COMPONENT
@@ -326,8 +370,7 @@ const MainSection = () => {
   const musicContext = useContext(MusicContext);
 
   const playMusic =
-    musicContext?.playMusic ||
-    null;
+    musicContext?.playMusic || null;
 
   // ==========================================================
   // STATE
@@ -335,28 +378,25 @@ const MainSection = () => {
 
   const [trending, setTrending] = useState([]);
 
-  const [latestSongs, setLatestSongs] =
+  const [latestSongs, setLatestSongs] = useState([]);
+
+  const [albums, setAlbums] = useState([]);
+
+  const [artists, setArtists] = useState([]);
+
+  const [artistStations, setArtistStations] =
     useState([]);
 
-  const [albums, setAlbums] =
-    useState([]);
-
-  const [artists, setArtists] =
-    useState([]);
-
-  const [playlists, setPlaylists] =
-    useState([]);
+  const [playlists, setPlaylists] = useState([]);
 
   const [
     recentlyPlayedSongs,
     setRecentlyPlayedSongs,
   ] = useState([]);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [loading, setLoading] = useState(true);
 
-  const [error, setError] =
-    useState("");
+  const [error, setError] = useState("");
 
   // ==========================================================
   // REFS
@@ -369,6 +409,9 @@ const MainSection = () => {
     useRef(null);
 
   const trendingScrollRef =
+    useRef(null);
+
+  const artistStationsScrollRef =
     useRef(null);
 
   // ==========================================================
@@ -385,8 +428,7 @@ const MainSection = () => {
         return;
       }
 
-      const parsed =
-        JSON.parse(stored);
+      const parsed = JSON.parse(stored);
 
       if (!Array.isArray(parsed)) {
         setRecentlyPlayedSongs([]);
@@ -405,7 +447,6 @@ const MainSection = () => {
       setRecentlyPlayedSongs([]);
     }
   };
-
 
   useEffect(() => {
     loadRecentlyPlayed();
@@ -427,7 +468,6 @@ const MainSection = () => {
     };
   }, []);
 
-
   // ==========================================================
   // ALL SONGS / PLAY QUEUE
   // ==========================================================
@@ -444,6 +484,66 @@ const MainSection = () => {
     latestSongs,
   ]);
 
+  // ==========================================================
+  // RECOMMENDED ARTIST STATIONS
+  // ==========================================================
+
+  const recommendedArtistStations =
+    useMemo(() => {
+      let source = [];
+
+      if (Array.isArray(artistData)) {
+        source = artistData;
+      } else if (
+        Array.isArray(artistData?.results)
+      ) {
+        source = artistData.results;
+      } else if (
+        Array.isArray(artistData?.data)
+      ) {
+        source = artistData.data;
+      } else if (
+        Array.isArray(artistData?.artists)
+      ) {
+        source = artistData.artists;
+      }
+
+      const output = [];
+      const seen = new Set();
+
+      source.forEach((artist) => {
+        if (!artist) {
+          return;
+        }
+
+        const id = getArtistId(artist);
+        const name = getArtistName(artist);
+
+        if (!name) {
+          return;
+        }
+
+        const key =
+          id !== null && id !== undefined
+            ? String(id)
+            : name.toLowerCase();
+
+        if (seen.has(key)) {
+          return;
+        }
+
+        seen.add(key);
+
+        output.push({
+          ...artist,
+          id,
+          name,
+          image: getArtistImage(artist),
+        });
+      });
+
+      return output.slice(0, 20);
+    }, []);
 
   // ==========================================================
   // SCROLL FUNCTIONS
@@ -460,7 +560,6 @@ const MainSection = () => {
     });
   };
 
-
   const scrollRight = (ref) => {
     if (!ref?.current) {
       return;
@@ -472,14 +571,12 @@ const MainSection = () => {
     });
   };
 
-
   // ==========================================================
   // GREETING
   // ==========================================================
 
   const getGreeting = () => {
-    const hour =
-      new Date().getHours();
+    const hour = new Date().getHours();
 
     if (hour < 12) {
       return "Good Morning";
@@ -496,7 +593,6 @@ const MainSection = () => {
     return "Good Night";
   };
 
-
   // ==========================================================
   // LOAD HOME DATA
   // ==========================================================
@@ -512,17 +608,25 @@ const MainSection = () => {
         const [
           trendingResult,
           latestResult,
+          malayalamNewTrendingResult,
           albumResult,
           playlistResult,
         ] = await Promise.allSettled([
+          // TODAY TRENDING
           fetchplaylistsByID(10763385),
 
+          // EXISTING NEW SONGS
           fetchplaylistsByID(80802063),
 
+          // MALAYALAM NEW TRENDING
+          getMalayalamNewTrending(),
+
+          // ALBUMS
           searchAlbumByQuery(
             "Tamil, Malayalam"
           ),
 
+          // PLAYLISTS
           searchPlayListByQuery(
             "Tamil, Malayalam"
           ),
@@ -532,7 +636,6 @@ const MainSection = () => {
           return;
         }
 
-
         // ======================================================
         // TRENDING
         // ======================================================
@@ -541,10 +644,9 @@ const MainSection = () => {
           trendingResult.status ===
           "fulfilled"
         ) {
-          const songs =
-            extractSongs(
-              trendingResult.value
-            );
+          const songs = extractSongs(
+            trendingResult.value
+          );
 
           setTrending(
             normalizeSongs(songs)
@@ -558,32 +660,62 @@ const MainSection = () => {
           setTrending([]);
         }
 
+        // ======================================================
+        // EXISTING NEW SONGS
+        // ======================================================
 
-        // ======================================================
-        // NEW SONGS
-        // ======================================================
+        let existingNewSongs = [];
 
         if (
           latestResult.status ===
           "fulfilled"
         ) {
-          const songs =
-            extractSongs(
-              latestResult.value
+          existingNewSongs =
+            normalizeSongs(
+              extractSongs(
+                latestResult.value
+              )
             );
-
-          setLatestSongs(
-            normalizeSongs(songs)
-          );
         } else {
           console.error(
             "Latest songs API:",
             latestResult.reason
           );
-
-          setLatestSongs([]);
         }
 
+        // ======================================================
+        // MALAYALAM NEW_TRENDING
+        // ======================================================
+
+        let malayalamNewSongs = [];
+
+        if (
+          malayalamNewTrendingResult.status ===
+          "fulfilled"
+        ) {
+          malayalamNewSongs =
+            normalizeSongs(
+              extractSongs(
+                malayalamNewTrendingResult.value
+              )
+            );
+        } else {
+          console.error(
+            "Malayalam new_trending API:",
+            malayalamNewTrendingResult.reason
+          );
+        }
+
+        // ======================================================
+        // MERGE NEW SONGS
+        // ======================================================
+
+        setLatestSongs(
+          normalizeSongs([
+            ...existingNewSongs,
+            ...malayalamNewSongs,
+          ])
+        );
 
         // ======================================================
         // ALBUMS
@@ -612,7 +744,6 @@ const MainSection = () => {
           setAlbums([]);
         }
 
-
         // ======================================================
         // PLAYLISTS
         // ======================================================
@@ -640,7 +771,6 @@ const MainSection = () => {
           setPlaylists([]);
         }
 
-
         // ======================================================
         // ARTISTS
         // ======================================================
@@ -654,6 +784,22 @@ const MainSection = () => {
         ) {
           setArtists(
             artistData.results
+          );
+        } else if (
+          Array.isArray(
+            artistData?.data
+          )
+        ) {
+          setArtists(
+            artistData.data
+          );
+        } else if (
+          Array.isArray(
+            artistData?.artists
+          )
+        ) {
+          setArtists(
+            artistData.artists
           );
         } else {
           setArtists([]);
@@ -684,7 +830,6 @@ const MainSection = () => {
       mounted = false;
     };
   }, []);
-
 
   // ==========================================================
   // SONG CLICK
@@ -735,7 +880,6 @@ const MainSection = () => {
     }
   };
 
-
   // ==========================================================
   // LOADING
   // ==========================================================
@@ -779,7 +923,6 @@ const MainSection = () => {
     );
   }
 
-
   // ==========================================================
   // ERROR
   // ==========================================================
@@ -801,116 +944,210 @@ const MainSection = () => {
           justify-center
         "
       >
-          <div className="text-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold">
+            Unable to load MusicMax
+          </h2>
 
-            <h2 className="text-xl font-semibold">
-              Unable to load MusicMax
-            </h2>
+          <p className="mt-3 text-sm opacity-70">
+            {error}
+          </p>
 
-            <p className="mt-3 text-sm opacity-70">
-              {error}
-            </p>
+          <button
+            type="button"
+            onClick={() =>
+              window.location.reload()
+            }
+            className="
+              mt-4
+              px-5
+              py-2
+              rounded-lg
+              bg-black
+              text-white
+              dark:bg-white
+              dark:text-black
+              transition
+            "
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================================
+  // MAIN UI
+  // ==========================================================
+
+  return (
+    <main
+      className="
+        pt-[3rem]
+        lg:pt-5
+        my-[2rem]
+        mt-[5rem]
+        lg:my-[4rem]
+        flex
+        flex-col
+        items-center
+        overflow-x-clip
+        gap-[0.3rem]
+        w-full
+      "
+    >
+      {/* =====================================================
+          GREETING
+      ===================================================== */}
+
+      <div
+        className="
+          hidden
+          lg:block
+          text-2xl
+          w-full
+          font-semibold
+          lg:ml-[5.5rem]
+          m-1
+        "
+      >
+        {getGreeting()}
+      </div>
+
+      {/* =====================================================
+          ERROR MESSAGE
+      ===================================================== */}
+
+      {error && (
+        <div
+          className="
+            w-[95%]
+            lg:w-[90%]
+            p-3
+            rounded-lg
+            border
+            border-red-500/30
+            bg-red-500/10
+            text-sm
+          "
+        >
+          <p className="text-red-400">
+            {error}
+          </p>
+        </div>
+      )}
+
+      {/* =====================================================
+          RECENTLY PLAYED
+      ===================================================== */}
+
+      {recentlyPlayedSongs.length > 0 && (
+        <section className="flex flex-col items-center w-full">
+          <h2
+            className="
+              m-4
+              mt-0
+              text-xl
+              lg:text-2xl
+              font-semibold
+              w-full
+              ml-[3.5rem]
+              lg:ml-[6.5rem]
+            "
+          >
+            Recently Played
+          </h2>
+
+          <div className="flex justify-center items-center gap-3 w-full">
+            <button
+              type="button"
+              onClick={() =>
+                scrollLeft(
+                  recentlyPlayedScrollRef
+                )
+              }
+              className="
+                text-3xl
+                hidden
+                lg:flex
+                items-center
+                justify-center
+                cursor-pointer
+                h-[9rem]
+                hover:scale-125
+                transition
+              "
+              aria-label="Scroll recently played left"
+            >
+              <MdOutlineKeyboardArrowLeft />
+            </button>
+
+            <div
+              ref={recentlyPlayedScrollRef}
+              className="
+                grid
+                grid-rows-1
+                grid-flow-col
+                justify-start
+                overflow-x-auto
+                scroll-hide
+                items-center
+                gap-3
+                lg:gap-2
+                w-full
+                px-3
+                lg:px-0
+              "
+            >
+              {recentlyPlayedSongs.map(
+                (song, index) => (
+                  <SongGrid
+                    key={
+                      song?.id ||
+                      `recent-${index}`
+                    }
+                    {...song}
+                    song={songList}
+                  />
+                )
+              )}
+            </div>
 
             <button
               type="button"
               onClick={() =>
-                window.location.reload()
+                scrollRight(
+                  recentlyPlayedScrollRef
+                )
               }
               className="
-                mt-4
-                px-5
-                py-2
-                rounded-lg
-                bg-black
-                text-white
-                dark:bg-white
-                dark:text-black
+                text-3xl
+                hidden
+                lg:flex
+                items-center
+                justify-center
+                cursor-pointer
+                h-[9rem]
+                hover:scale-125
                 transition
               "
+              aria-label="Scroll recently played right"
             >
-              Try Again
+              <MdOutlineKeyboardArrowRight />
             </button>
-
           </div>
-          </div>
-  );
-}
+        </section>
+      )}
 
+      {/* =====================================================
+          NEW SONGS
+      ===================================================== */}
 
-// ==========================================================
-// MAIN UI
-// ==========================================================
-
-return (
-  <main
-    className="
-      pt-[3rem]
-      lg:pt-5
-      my-[2rem]
-      mt-[5rem]
-      lg:my-[4rem]
-      flex
-      flex-col
-      items-center
-      overflow-x-clip
-      gap-[0.3rem]
-      w-full
-    "
-  >
-    {/* ============================================
-        GREETING
-    ============================================ */}
-
-    <div
-      className="
-        hidden
-        lg:block
-        text-2xl
-        w-full
-        font-semibold
-        lg:ml-[5.5rem]
-        m-1
-      "
-    >
-      {getGreeting()}
-    </div>
-
-
-    {/* ============================================
-        ERROR MESSAGE
-    ============================================ */}
-
-    {error && (
-      <div
-        className="
-          w-[95%]
-          lg:w-[90%]
-          p-3
-          rounded-lg
-          border
-          border-red-500/30
-          bg-red-500/10
-          text-sm
-        "
-      >
-        <p className="text-red-400">
-          {error}
-        </p>
-      </div>
-    )}
-
-
-    {/* ============================================
-        RECENTLY PLAYED
-    ============================================ */}
-
-    {recentlyPlayedSongs.length > 0 && (
       <section className="flex flex-col items-center w-full">
-
         <h2
           className="
             m-4
-            mt-0
             text-xl
             lg:text-2xl
             font-semibold
@@ -919,16 +1156,15 @@ return (
             lg:ml-[6.5rem]
           "
         >
-          Recently Played
+          New Songs
         </h2>
 
         <div className="flex justify-center items-center gap-3 w-full">
-
           <button
             type="button"
             onClick={() =>
               scrollLeft(
-                recentlyPlayedScrollRef
+                latestSongsScrollRef
               )
             }
             className="
@@ -942,16 +1178,17 @@ return (
               hover:scale-125
               transition
             "
-            aria-label="Scroll recently played left"
+            aria-label="Scroll new songs left"
           >
             <MdOutlineKeyboardArrowLeft />
           </button>
 
           <div
-            ref={recentlyPlayedScrollRef}
+            ref={latestSongsScrollRef}
             className="
               grid
               grid-rows-1
+              lg:grid-rows-2
               grid-flow-col
               justify-start
               overflow-x-auto
@@ -964,130 +1201,25 @@ return (
               lg:px-0
             "
           >
-            {recentlyPlayedSongs.map(
-              (song, index) => (
-                <SongGrid
-                  key={
-                    song?.id ||
-                    `recent-${index}`
-                  }
-                  {...song}
-                  song={songList}
-                />
+            {latestSongs.length > 0 ? (
+              latestSongs.map(
+                (song, index) => (
+                  <SongGrid
+                    key={
+                      song?.id ||
+                      `latest-${index}`
+                    }
+                    {...song}
+                    song={songList}
+                  />
+                )
               )
+            ) : (
+              <p className="px-5">
+                No new songs available.
+              </p>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              scrollRight(
-                recentlyPlayedScrollRef
-              )
-            }
-            className="
-              text-3xl
-              hidden
-              lg:flex
-              items-center
-              justify-center
-              cursor-pointer
-              h-[9rem]
-              hover:scale-125
-              transition
-            "
-            aria-label="Scroll recently played right"
-          >
-            <MdOutlineKeyboardArrowRight />
-          </button>
-
-        </div>
-      </section>
-    )}
-
-
-    {/* ============================================
-        NEW SONGS
-    ============================================ */}
-
-    <section className="flex flex-col items-center w-full">
-
-      <h2
-        className="
-          m-4
-          text-xl
-          lg:text-2xl
-          font-semibold
-          w-full
-          ml-[3.5rem]
-          lg:ml-[6.5rem]
-        "
-      >
-        New Songs
-      </h2>
-
-      <div className="flex justify-center items-center gap-3 w-full">
-
-        <button
-          type="button"
-          onClick={() =>
-            scrollLeft(
-              latestSongsScrollRef
-            )
-          }
-          className="
-            text-3xl
-            hidden
-            lg:flex
-            items-center
-            justify-center
-            cursor-pointer
-            h-[9rem]
-            hover:scale-125
-            transition
-          "
-          aria-label="Scroll new songs left"
-        >
-          <MdOutlineKeyboardArrowLeft />
-        </button>
-
-        <div
-          ref={latestSongsScrollRef}
-          className="
-            grid
-            grid-rows-1
-            lg:grid-rows-2
-            grid-flow-col
-            justify-start
-            overflow-x-auto
-            scroll-hide
-            items-center
-            gap-3
-            lg:gap-2
-            w-full
-            px-3
-            lg:px-0
-          "
-        >
-          {latestSongs.length > 0 ? (
-            latestSongs.map(
-              (song, index) => (
-                <SongGrid
-                  key={
-                    song?.id ||
-                    `latest-${index}`
-                  }
-                  {...song}
-                  song={songList}
-                />
-              )
-            )
-          ) : (
-            <p className="px-5">
-              No new songs available.
-            </p>
-          )}
-        </div>
 
           <button
             type="button"
@@ -1111,226 +1243,420 @@ return (
           >
             <MdOutlineKeyboardArrowRight />
           </button>
-
-      </div>
-    </section>
-
-
-    {/* ============================================
-        TODAY TRENDING
-    ============================================ */}
-
-    <section className="flex flex-col items-center w-full">
-
-      <h2
-        className="
-          m-4
-          mt-0
-          text-xl
-          lg:text-2xl
-          font-semibold
-          w-full
-          ml-[3.5rem]
-          lg:ml-[6.5rem]
-        "
-      >
-        Today Trending
-      </h2>
-
-      <div className="flex justify-center items-center gap-3 w-full">
-
-        <button
-          type="button"
-          onClick={() =>
-            scrollLeft(
-              trendingScrollRef
-            )
-          }
-          className="
-            text-3xl
-            hidden
-            lg:flex
-            items-center
-            justify-center
-            cursor-pointer
-            h-[9rem]
-            hover:scale-125
-            transition
-          "
-          aria-label="Scroll trending songs left"
-        >
-          <MdOutlineKeyboardArrowLeft />
-        </button>
-
-        <div
-          ref={trendingScrollRef}
-          className="
-            grid
-            grid-rows-1
-            lg:grid-rows-2
-            grid-flow-col
-            justify-start
-            overflow-x-auto
-            scroll-hide
-            items-center
-            gap-3
-            lg:gap-2
-            w-full
-            px-3
-            lg:px-0
-          "
-        >
-          {trending.length > 0 ? (
-            trending.map(
-              (song, index) => (
-                <SongGrid
-                  key={
-                    song?.id ||
-                    `trending-${index}`
-                  }
-                  {...song}
-                  song={songList}
-                />
-              )
-            )
-          ) : (
-            <p className="px-5">
-              No trending songs available.
-            </p>
-          )}
         </div>
+      </section>
 
-        <button
-          type="button"
-          onClick={() =>
-            scrollRight(
-              trendingScrollRef
-            )
-          }
+      {/* =====================================================
+          TODAY TRENDING
+      ===================================================== */}
+
+      <section className="flex flex-col items-center w-full">
+        <h2
           className="
-            text-3xl
-            hidden
-            lg:flex
-            items-center
-            justify-center
-            cursor-pointer
-            h-[9rem]
-            hover:scale-125
-            transition
+            m-4
+            mt-0
+            text-xl
+            lg:text-2xl
+            font-semibold
+            w-full
+            ml-[3.5rem]
+            lg:ml-[6.5rem]
           "
-          aria-label="Scroll trending songs right"
         >
-          <MdOutlineKeyboardArrowRight />
-        </button>
+          Today Trending
+        </h2>
 
-      </div>
-    </section>
+        <div className="flex justify-center items-center gap-3 w-full">
+          <button
+            type="button"
+            onClick={() =>
+              scrollLeft(
+                trendingScrollRef
+              )
+            }
+            className="
+              text-3xl
+              hidden
+              lg:flex
+              items-center
+              justify-center
+              cursor-pointer
+              h-[9rem]
+              hover:scale-125
+              transition
+            "
+            aria-label="Scroll trending songs left"
+          >
+            <MdOutlineKeyboardArrowLeft />
+          </button>
 
+          <div
+            ref={trendingScrollRef}
+            className="
+              grid
+              grid-rows-1
+              lg:grid-rows-2
+              grid-flow-col
+              justify-start
+              overflow-x-auto
+              scroll-hide
+              items-center
+              gap-3
+              lg:gap-2
+              w-full
+              px-3
+              lg:px-0
+            "
+          >
+            {trending.length > 0 ? (
+              trending.map(
+                (song, index) => (
+                  <SongGrid
+                    key={
+                      song?.id ||
+                      `trending-${index}`
+                    }
+                    {...song}
+                    song={songList}
+                  />
+                )
+              )
+            ) : (
+              <p className="px-5">
+                No trending songs available.
+              </p>
+            )}
+          </div>
 
-    {/* ============================================
-        TOP ALBUMS
-    ============================================ */}
+          <button
+            type="button"
+            onClick={() =>
+              scrollRight(
+                trendingScrollRef
+              )
+            }
+            className="
+              text-3xl
+              hidden
+              lg:flex
+              items-center
+              justify-center
+              cursor-pointer
+              h-[9rem]
+              hover:scale-125
+              transition
+            "
+            aria-label="Scroll trending songs right"
+          >
+            <MdOutlineKeyboardArrowRight />
+          </button>
+        </div>
+      </section>
 
-    <section className="w-full">
+      {/* =====================================================
+          TOP ALBUMS
+      ===================================================== */}
 
-      <h2
-        className="
-          m-4
-          mt-0
-          text-xl
-          lg:text-2xl
-          font-semibold
-          ml-[1rem]
-          lg:ml-[3rem]
-        "
-      >
-        Top Albums
-      </h2>
+      <section className="w-full">
+        <h2
+          className="
+            m-4
+            mt-0
+            text-xl
+            lg:text-2xl
+            font-semibold
+            ml-[1rem]
+            lg:ml-[3rem]
+          "
+        >
+          Top Albums
+        </h2>
 
-      {albums.length > 0 ? (
-        <AlbumSlider
-          albums={albums}
-        />
-      ) : (
-        <p className="px-5">
-          No albums available.
-        </p>
-      )}
+        {albums.length > 0 ? (
+          <AlbumSlider albums={albums} />
+        ) : (
+          <p className="px-5">
+            No albums available.
+          </p>
+        )}
+      </section>
 
-    </section>
+      {/* =====================================================
+          TOP ARTISTS
+      ===================================================== */}
 
+      <section className="w-full">
+        <h2
+          className="
+            m-4
+            mt-0
+            text-xl
+            lg:text-2xl
+            font-semibold
+            ml-[1rem]
+            lg:ml-[3.5rem]
+          "
+        >
+          Top Artists
+        </h2>
 
-    {/* ============================================
-        TOP ARTISTS
-    ============================================ */}
-
-    <section className="w-full">
-
-      <h2
-        className="
-          m-4
-          mt-0
-          text-xl
-          lg:text-2xl
-          font-semibold
-          ml-[1rem]
-          lg:ml-[3.5rem]
-        "
-      >
-        Top Artists
-      </h2>
-
-      {artists.length > 0 ? (
-        <ArtistSlider
-          artists={artists}
-        />
-      ) : (
-        <p className="px-5">
-          No artists available.
-        </p>
-      )}
-
-    </section>
-
-
-    {/* ============================================
-        TOP PLAYLISTS
-    ============================================ */}
-
-    <section className="w-full">
-
-      <h2
-        className="
-          m-1
-          text-xl
-          lg:text-2xl
-          font-semibold
-          ml-[1rem]
-          lg:ml-[2.8rem]
-        "
-      >
-        Top Playlists
-      </h2>
-
-      <div className="flex items-center">
-
-        {playlists.length > 0 ? (
-          <PlaylistSlider
-            playlists={playlists}
+        {artists.length > 0 ? (
+          <ArtistSlider
+            artists={artists}
           />
+        ) : (
+          <p className="px-5">
+            No artists available.
+          </p>
+        )}
+      </section>
+
+      {/* =====================================================
+          RECOMMENDED ARTIST STATIONS
+      ===================================================== */}
+
+      {recommendedArtistStations.length >
+        0 && (
+        <section className="w-full">
+          <div
+            className="
+              flex
+              items-center
+              justify-between
+              w-full
+              px-4
+              lg:px-12
+              mb-3
+            "
+          >
+            <h2
+              className="
+                text-xl
+                lg:text-2xl
+                font-semibold
+              "
+            >
+              Recommended Artist Stations
+            </h2>
+
+            <div className="hidden lg:flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() =>
+                  scrollLeft(
+                    artistStationsScrollRef
+                  )
+                }
+                className="
+                  text-3xl
+                  flex
+                  items-center
+                  justify-center
+                  cursor-pointer
+                  hover:scale-125
+                  transition
+                "
+                aria-label="Scroll artist stations left"
+              >
+                <MdOutlineKeyboardArrowLeft />
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  scrollRight(
+                    artistStationsScrollRef
+                  )
+                }
+                className="
+                  text-3xl
+                  flex
+                  items-center
+                  justify-center
+                  cursor-pointer
+                  hover:scale-125
+                  transition
+                "
+                aria-label="Scroll artist stations right"
+              >
+                <MdOutlineKeyboardArrowRight />
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={artistStationsScrollRef}
+            className="
+              flex
+              gap-4
+              overflow-x-auto
+              scroll-hide
+              px-4
+              lg:px-12
+              pb-4
+            "
+          >
+            {recommendedArtistStations.map(
+              (artist, index) => (
+                <div
+                  key={
+                    artist.id ||
+                    `artist-station-${index}`
+                  }
+                  className="
+                    flex
+                    flex-col
+                    items-center
+                    flex-shrink-0
+                    w-[125px]
+                    lg:w-[145px]
+                    group
+                  "
+                >
+                  <button
+                    type="button"
+                    className="
+                      relative
+                      w-[110px]
+                      h-[110px]
+                      lg:w-[130px]
+                      lg:h-[130px]
+                      rounded-full
+                      overflow-hidden
+                      shadow-lg
+                      cursor-pointer
+                      transition-all
+                      duration-300
+                      hover:scale-105
+                    "
+                    aria-label={`Open ${artist.name} artist station`}
+                    onClick={() => {
+                      /*
+                       * The currently available artistData
+                       * contains artist information only.
+                       *
+                       * No artist-station playback endpoint
+                       * is assumed here, so we intentionally
+                       * do not invent an API URL.
+                       */
+                      console.log(
+                        "Recommended Artist Station:",
+                        artist
+                      );
+                    }}
+                  >
+                    <img
+                      src={
+                        artist.image ||
+                        FALLBACK_IMAGE
+                      }
+                      alt={artist.name}
+                      className="
+                        w-full
+                        h-full
+                        object-cover
+                      "
+                      loading="lazy"
+                      onError={(event) => {
+                        event.currentTarget.src =
+                          FALLBACK_IMAGE;
+                      }}
+                    />
+
+                    <div
+                      className="
+                        absolute
+                        inset-0
+                        bg-black/0
+                        group-hover:bg-black/20
+                        transition
+                      "
+                    />
+
+                    <div
+                      className="
+                        absolute
+                        bottom-2
+                        right-2
+                        w-9
+                        h-9
+                        rounded-full
+                        bg-black
+                        text-white
+                        flex
+                        items-center
+                        justify-center
+                        opacity-0
+                        group-hover:opacity-100
+                        transition
+                      "
+                    >
+                      ▶
+                    </div>
+                  </button>
+
+                  <p
+                    className="
+                      mt-3
+                      text-sm
+                      lg:text-base
+                      font-medium
+                      text-center
+                      truncate
+                      w-full
+                    "
+                  >
+                    {artist.name}
+                  </p>
+
+                  <p
+                    className="
+                      text-xs
+                      opacity-60
+                      mt-1
+                    "
+                  >
+                    Artist Station
+                  </p>
+                </div>
+              )
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* =====================================================
+          TOP PLAYLISTS
+      ===================================================== */}
+
+      <section className="w-full">
+        <h2
+          className="
+            m-1
+            text-xl
+            lg:text-2xl
+            font-semibold
+            ml-[1rem]
+            lg:ml-[2.8rem]
+          "
+        >
+          Top Playlists
+        </h2>
+
+        <div className="flex items-center">
+          {playlists.length > 0 ? (
+            <PlaylistSlider
+              playlists={playlists}
+            />
           ) : (
             <p className="px-5">
               No playlists available.
             </p>
           )}
-
-      </div>
-
-    </section>
-
-  </main>
-);
-
+        </div>
+      </section>
+    </main>
+  );
 };
 
 export default MainSection;
