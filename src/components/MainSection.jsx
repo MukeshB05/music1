@@ -1,1351 +1,733 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
-  fetchplaylistsByID,
-  searchAlbumByQuery,
-  searchPlayListByQuery,
+  getTamilNewSongs,
+  getMalayalamNewSongs,
+  getHindiNewSongs,
+  getTamilNewAlbums,
+  getMalayalamNewAlbums,
+  getHindiNewAlbums,
+  getTamilNewPlaylists,
+  getMalayalamNewPlaylists,
+  getHindiNewPlaylists,
+  getLanguageFeaturedRadios,
 } from "../../fetch";
 
-import AlbumSlider from "./Sliders/AlbumSlider";
-import PlaylistSlider from "./Sliders/PlaylistSlider";
-import ArtistSlider from "./Sliders/ArtistSlider";
-import SongGrid from "./SongGrid";
+import MusicContext from "../context/MusicContext";
+import SongGrid from "../SongGrid";
+import ArtistItems from "../ArtistItems";
+import artistData from "../genreData";
 
-import {
-  MdOutlineKeyboardArrowLeft,
-  MdOutlineKeyboardArrowRight,
-} from "react-icons/md";
+const FALLBACK_IMAGE = "/Unknown.png";
 
-import { artistData } from "../genreData";
+const resolveImage = (value) => {
+  if (!value) return FALLBACK_IMAGE;
 
+  if (typeof value === "string") {
+    return value;
+  }
 
-// =========================================================
-// MAIN SECTION
-// =========================================================
+  if (Array.isArray(value)) {
+    for (let i = value.length - 1; i >= 0; i -= 1) {
+      const item = value[i];
+
+      if (typeof item === "string" && item.trim()) {
+        return item;
+      }
+
+      if (item && typeof item === "object") {
+        const url = item.url || item.link || item.src;
+        if (url) return url;
+      }
+    }
+  }
+
+  if (typeof value === "object") {
+    return value.url || value.link || value.src || FALLBACK_IMAGE;
+  }
+
+  return FALLBACK_IMAGE;
+};
+
+const getItemImage = (item) =>
+  resolveImage(
+    item?.image ||
+      item?.images ||
+      item?.album?.image ||
+      item?.album?.images ||
+      item?.thumbnail ||
+      item?.cover
+  );
+
+const getItemId = (item) =>
+  item?.id ||
+  item?.songId ||
+  item?.song_id ||
+  item?.trackId ||
+  item?.albumId ||
+  item?.playlistId ||
+  item?.artistId ||
+  item?.perma_url ||
+  item?.permaUrl;
+
+const getItemName = (item) =>
+  item?.name ||
+  item?.title ||
+  item?.song ||
+  item?.album_name ||
+  item?.albumName ||
+  "Unknown";
+
+const getArtistName = (item) => {
+  if (Array.isArray(item?.artists)) {
+    return item.artists
+      .map((artist) => artist?.name || artist)
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  if (typeof item?.artists === "string") {
+    return item.artists;
+  }
+
+  if (item?.primaryArtists) return item.primaryArtists;
+  if (item?.artist) {
+    if (typeof item.artist === "string") return item.artist;
+    return item.artist?.name || "";
+  }
+
+  return "";
+};
+
+const normalizeArray = (response) => {
+  if (Array.isArray(response)) return response;
+
+  if (Array.isArray(response?.data)) return response.data;
+  if (Array.isArray(response?.data?.results)) return response.data.results;
+  if (Array.isArray(response?.data?.songs)) return response.data.songs;
+  if (Array.isArray(response?.data?.albums)) return response.data.albums;
+  if (Array.isArray(response?.data?.playlists)) return response.data.playlists;
+  if (Array.isArray(response?.data?.items)) return response.data.items;
+
+  if (Array.isArray(response?.results)) return response.results;
+  if (Array.isArray(response?.songs)) return response.songs;
+  if (Array.isArray(response?.albums)) return response.albums;
+  if (Array.isArray(response?.playlists)) return response.playlists;
+  if (Array.isArray(response?.items)) return response.items;
+
+  return [];
+};
+
+const uniqueItems = (items = []) => {
+  const seen = new Set();
+
+  return items.filter((item) => {
+    const id =
+      getItemId(item) ||
+      `${getItemName(item)}-${getArtistName(item)}`.toLowerCase();
+
+    if (!id || seen.has(id)) return false;
+
+    seen.add(id);
+    return true;
+  });
+};
+
+const getSongAudio = (song) =>
+  song?.audio ||
+  song?.audioUrl ||
+  song?.downloadUrl ||
+  song?.download_url ||
+  song?.media_url ||
+  song?.mediaUrl ||
+  song?.url ||
+  song?.more_info?.encrypted_media_url ||
+  song?.more_info?.media_url ||
+  "";
+
+const normalizeSong = (song) => {
+  if (!song) return null;
+
+  return {
+    ...song,
+    id: getItemId(song),
+    name: getItemName(song),
+    title: song?.title || getItemName(song),
+    image: getItemImage(song),
+    artists:
+      song?.artists ||
+      song?.primaryArtists ||
+      song?.artist ||
+      getArtistName(song),
+    primaryArtists:
+      song?.primaryArtists ||
+      getArtistName(song) ||
+      song?.artists ||
+      "",
+    audio: getSongAudio(song),
+    duration:
+      song?.duration ||
+      song?.more_info?.duration ||
+      song?.more_info?.duration_sec ||
+      0,
+  };
+};
+
+const normalizeSongs = (response, limit = 30) =>
+  uniqueItems(
+    normalizeArray(response)
+      .map(normalizeSong)
+      .filter((song) => song?.id)
+  ).slice(0, limit);
+
+const normalizeCards = (response, limit = 20) =>
+  uniqueItems(normalizeArray(response).filter(Boolean)).slice(0, limit);
+
+const SectionTitle = ({ children, to }) => (
+  <div className="section-title-row">
+    <h2>{children}</h2>
+
+    {to ? (
+      <Link to={to} className="section-view-all">
+        See All
+      </Link>
+    ) : null}
+  </div>
+);
+
+const EmptySection = ({ message = "No data available." }) => (
+  <div className="empty-section">
+    <p>{message}</p>
+  </div>
+);
+
+const SongSection = ({ title, songs, queue, onPlay, viewAll }) => {
+  const list = normalizeSongs(songs, 30);
+
+  return (
+    <section className="music-section song-section">
+      <SectionTitle to={viewAll}>{title}</SectionTitle>
+
+      {list.length ? (
+        <div className="song-grid-wrapper">
+          {list.map((song, index) => (
+            <SongGrid
+              key={song?.id || `${title}-${index}`}
+              {...song}
+              song={queue?.length ? queue : list}
+              onClick={() => onPlay?.(song, list)}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptySection />
+      )}
+    </section>
+  );
+};
+
+const AlbumCard = ({ album }) => {
+  const id = getItemId(album);
+  const image = getItemImage(album);
+  const name = getItemName(album);
+
+  return (
+    <Link
+      to={id ? `/album/${id}` : "#"}
+      className="media-card album-card"
+      onClick={(event) => {
+        if (!id) event.preventDefault();
+      }}
+    >
+      <div className="media-card-image">
+        <img
+          src={image}
+          alt={name}
+          loading="lazy"
+          onError={(event) => {
+            event.currentTarget.src = FALLBACK_IMAGE;
+          }}
+        />
+      </div>
+
+      <div className="media-card-content">
+        <h3>{name}</h3>
+        <p>{getArtistName(album) || album?.year || "Album"}</p>
+      </div>
+    </Link>
+  );
+};
+
+const PlaylistCard = ({ playlist }) => {
+  const id = getItemId(playlist);
+  const image = getItemImage(playlist);
+  const name = getItemName(playlist);
+
+  return (
+    <Link
+      to={id ? `/playlist/${id}` : "#"}
+      className="media-card playlist-card"
+      onClick={(event) => {
+        if (!id) event.preventDefault();
+      }}
+    >
+      <div className="media-card-image">
+        <img
+          src={image}
+          alt={name}
+          loading="lazy"
+          onError={(event) => {
+            event.currentTarget.src = FALLBACK_IMAGE;
+          }}
+        />
+      </div>
+
+      <div className="media-card-content">
+        <h3>{name}</h3>
+        <p>
+          {playlist?.songCount ||
+            playlist?.song_count ||
+            playlist?.songs?.length ||
+            "Playlist"}
+        </p>
+      </div>
+    </Link>
+  );
+};
+
+const CardGrid = ({ items, type }) => {
+  const list = normalizeCards(items, 20);
+
+  if (!list.length) {
+    return <EmptySection />;
+  }
+
+  return (
+    <div className="media-card-grid">
+      {list.map((item, index) =>
+        type === "playlist" ? (
+          <PlaylistCard
+            key={getItemId(item) || `playlist-${index}`}
+            playlist={item}
+          />
+        ) : (
+          <AlbumCard
+            key={getItemId(item) || `album-${index}`}
+            album={item}
+          />
+        )
+      )}
+    </div>
+  );
+};
+
+const RadioSection = ({ radios }) => {
+  const list = Array.isArray(radios) ? radios : [];
+
+  if (!list.length) return null;
+
+  return (
+    <section className="music-section radio-section">
+      <SectionTitle>Featured Radio</SectionTitle>
+
+      <div className="radio-grid">
+        {list.map((radio, index) => {
+          const name =
+            radio?.name ||
+            radio?.language ||
+            radio?.stationName ||
+            "Featured Radio";
+
+          const stationId =
+            radio?.stationId ||
+            radio?.station_id ||
+            radio?.id ||
+            "";
+
+          return (
+            <div
+              className="radio-card"
+              key={stationId || `${name}-${index}`}
+            >
+              <div className="radio-icon">♫</div>
+
+              <div className="radio-info">
+                <h3>{name}</h3>
+                <p>
+                  {stationId
+                    ? `Station ID: ${stationId}`
+                    : "Featured station"}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="radio-play-button"
+                disabled
+                title="Station playback endpoint is not available from this API response"
+              >
+                ▶
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
 
 const MainSection = () => {
-  // =========================================================
-  // STATE
-  // =========================================================
+  const { currentSong, playMusic } = MusicContext.useContext
+    ? MusicContext.useContext()
+    : {};
 
-  const [trending, setTrending] = useState([]);
-  const [latestSongs, setLatestSongs] = useState([]);
+  const [recentlyPlayed, setRecentlyPlayed] = useState([]);
+  const [tamilSongs, setTamilSongs] = useState([]);
+  const [malayalamSongs, setMalayalamSongs] = useState([]);
+  const [hindiSongs, setHindiSongs] = useState([]);
 
-  const [tamilNewReleases, setTamilNewReleases] = useState([]);
-  const [malayalamNewReleases, setMalayalamNewReleases] =
-    useState([]);
-  const [hindiNewReleases, setHindiNewReleases] = useState([]);
-  const [englishNewReleases, setEnglishNewReleases] =
-    useState([]);
+  const [tamilAlbums, setTamilAlbums] = useState([]);
+  const [malayalamAlbums, setMalayalamAlbums] = useState([]);
+  const [hindiAlbums, setHindiAlbums] = useState([]);
 
-  const [albums, setAlbums] = useState([]);
-  const [artists, setArtists] = useState([]);
-  const [playlists, setPlaylists] = useState([]);
+  const [tamilPlaylists, setTamilPlaylists] = useState([]);
+  const [malayalamPlaylists, setMalayalamPlaylists] = useState([]);
+  const [hindiPlaylists, setHindiPlaylists] = useState([]);
 
-  const [recentlyPlayedSongs, setRecentlyPlayedSongs] =
-    useState([]);
+  const [radios, setRadios] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-
-  // =========================================================
-  // REFS
-  // =========================================================
-
-  const recentlyPlayedScrollRef = useRef(null);
-  const latestSongsScrollRef = useRef(null);
-  const trendingScrollRef = useRef(null);
-
-  const tamilNewReleasesScrollRef = useRef(null);
-  const malayalamNewReleasesScrollRef = useRef(null);
-  const hindiNewReleasesScrollRef = useRef(null);
-  const englishNewReleasesScrollRef = useRef(null);
-
-
-  // =========================================================
-  // READ RECENTLY PLAYED
-  // =========================================================
-
-  const loadRecentlyPlayed = () => {
-    try {
-      const storedSongs =
-        localStorage.getItem("playedSongs");
-
-      if (!storedSongs) {
-        setRecentlyPlayedSongs([]);
-        return;
-      }
-
-      const parsedSongs = JSON.parse(storedSongs);
-
-      if (!Array.isArray(parsedSongs)) {
-        setRecentlyPlayedSongs([]);
-        return;
-      }
-
-      setRecentlyPlayedSongs(parsedSongs);
-    } catch (err) {
-      console.error(
-        "Unable to read recently played songs:",
-        err
-      );
-
-      setRecentlyPlayedSongs([]);
-    }
-  };
-
-
-  // =========================================================
-  // INITIAL RECENTLY PLAYED LOAD
-  // =========================================================
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    loadRecentlyPlayed();
-
-    const handleStorage = () => {
-      loadRecentlyPlayed();
-    };
-
-    window.addEventListener(
-      "storage",
-      handleStorage
-    );
+    mountedRef.current = true;
 
     return () => {
-      window.removeEventListener(
-        "storage",
-        handleStorage
-      );
+      mountedRef.current = false;
     };
   }, []);
 
-
-  // =========================================================
-  // SCROLL LEFT
-  // =========================================================
-
-  const scrollLeft = (ref) => {
-    if (!ref?.current) {
-      return;
-    }
-
-    ref.current.scrollBy({
-      left: -800,
-      behavior: "smooth",
-    });
-  };
-
-
-  // =========================================================
-  // SCROLL RIGHT
-  // =========================================================
-
-  const scrollRight = (ref) => {
-    if (!ref?.current) {
-      return;
-    }
-
-    ref.current.scrollBy({
-      left: 800,
-      behavior: "smooth",
-    });
-  };
-
-
-  // =========================================================
-  // GREETING
-  // =========================================================
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-
-    if (hour < 12) {
-      return "Good Morning";
-    }
-
-    if (hour < 18) {
-      return "Good Afternoon";
-    }
-
-    if (hour < 21) {
-      return "Good Evening";
-    }
-
-    return "Good Night";
-  };
-
-
-  // =========================================================
-  // NORMALIZE ARRAY
-  // =========================================================
-
-  const getArray = (value) => {
-    if (Array.isArray(value)) {
-      return value;
-    }
-
-    return [];
-  };
-
-
-  // =========================================================
-  // GET PLAYLIST ID
-  //
-  // Supports:
-  // id
-  // listid
-  // listId
-  // playlistId
-  // playlist_id
-  // url
-  // permalink
-  // =========================================================
-
-  const getPlaylistId = (playlist) => {
-    if (!playlist) {
-      return null;
-    }
-
-    const directId =
-      playlist?.id ??
-      playlist?.listid ??
-      playlist?.listId ??
-      playlist?.playlistId ??
-      playlist?.playlist_id;
-
-    if (directId) {
-      return String(directId);
-    }
-
-    const possibleUrl =
-      playlist?.url ??
-      playlist?.perma_url ??
-      playlist?.permalink ??
-      playlist?.link;
-
-    if (typeof possibleUrl === "string") {
-      const matches = possibleUrl.match(
-        /([A-Za-z0-9_-]{8,})\/?$/
-      );
-
-      if (matches?.[1]) {
-        return matches[1];
-      }
-    }
-
-    return null;
-  };
-
-
-  // =========================================================
-  // EXTRACT PLAYLIST RESULTS
-  // =========================================================
-
-  const getPlaylistResults = (response) => {
-    const possibleResults = [
-      response?.data?.results,
-      response?.data?.playlists,
-      response?.data?.playlist,
-      response?.results,
-      response?.playlists,
-      response?.playlist,
-    ];
-
-    for (const value of possibleResults) {
-      if (Array.isArray(value)) {
-        return value;
-      }
-    }
-
-    return [];
-  };
-
-
-  // =========================================================
-  // EXTRACT SONGS
-  // =========================================================
-
-  const getSongsFromResponse = (response) => {
-    const possibleSongs = [
-      response?.data?.songs,
-      response?.data?.data?.songs,
-      response?.songs,
-      response?.data?.results,
-      response?.results,
-    ];
-
-    for (const value of possibleSongs) {
-      if (Array.isArray(value)) {
-        return value;
-      }
-    }
-
-    return [];
-  };
-
-
-  // =========================================================
-  // CHECK PLAYLIST TITLE
-  // =========================================================
-
-  const getPlaylistTitle = (playlist) => {
-    return String(
-      playlist?.title ??
-        playlist?.name ??
-        playlist?.playlistName ??
-        playlist?.label ??
-        ""
-    ).toLowerCase();
-  };
-
-
-  // =========================================================
-  // FIND BEST NEW RELEASE PLAYLIST
-  // =========================================================
-
-  const findNewReleasePlaylist = (
-    playlists,
-    language
-  ) => {
-    if (!Array.isArray(playlists) || playlists.length === 0) {
-      return null;
-    }
-
-    const normalizedLanguage =
-      String(language).toLowerCase();
-
-    // -------------------------------------------------------
-    // First priority:
-    // language + new release/new song/latest
-    // -------------------------------------------------------
-
-    const exactMatch = playlists.find((playlist) => {
-      const title = getPlaylistTitle(playlist);
-
-      const hasLanguage =
-        title.includes(normalizedLanguage);
-
-      const hasReleaseKeyword =
-        title.includes("new release") ||
-        title.includes("new releases") ||
-        title.includes("new song") ||
-        title.includes("new songs") ||
-        title.includes("latest") ||
-        title.includes("fresh");
-
-      return hasLanguage && hasReleaseKeyword;
-    });
-
-    if (exactMatch) {
-      return exactMatch;
-    }
-
-
-    // -------------------------------------------------------
-    // Second priority:
-    // language only
-    // -------------------------------------------------------
-
-    const languageMatch = playlists.find((playlist) => {
-      const title = getPlaylistTitle(playlist);
-
-      return title.includes(normalizedLanguage);
-    });
-
-    if (languageMatch) {
-      return languageMatch;
-    }
-
-
-    // -------------------------------------------------------
-    // Third priority:
-    // new releases keyword
-    // -------------------------------------------------------
-
-    const releaseMatch = playlists.find((playlist) => {
-      const title = getPlaylistTitle(playlist);
-
-      return (
-        title.includes("new release") ||
-        title.includes("new releases") ||
-        title.includes("latest") ||
-        title.includes("fresh")
-      );
-    });
-
-    if (releaseMatch) {
-      return releaseMatch;
-    }
-
-
-    return playlists[0];
-  };
-
-
-  // =========================================================
-  // LOAD LANGUAGE NEW RELEASES
-  //
-  // 1. Search playlist
-  // 2. Find matching language playlist
-  // 3. Get playlist ID
-  // 4. Fetch complete playlist songs
-  // =========================================================
-
-  const loadLanguageNewReleases = async (
-    language
-  ) => {
+  useEffect(() => {
     try {
-      const searchQueries = [
-        `${language} New Releases`,
-        `${language} New Songs`,
-        `${language} Latest Songs`,
-        `${language} Latest`,
-      ];
+      const stored = localStorage.getItem("recentlyPlayed");
 
-      let playlist = null;
-
-      for (const query of searchQueries) {
-        try {
-          const response =
-            await searchPlayListByQuery(query);
-
-          const results =
-            getPlaylistResults(response);
-
-          const found =
-            findNewReleasePlaylist(
-              results,
-              language
-            );
-
-          if (found) {
-            playlist = found;
-            break;
-          }
-        } catch (searchError) {
-          console.warn(
-            `${language} playlist search failed:`,
-            searchError
-          );
-        }
+      if (!stored) {
+        setRecentlyPlayed([]);
+        return;
       }
 
-      if (!playlist) {
-        console.warn(
-          `No ${language} New Releases playlist found.`
+      const parsed = JSON.parse(stored);
+
+      if (Array.isArray(parsed)) {
+        setRecentlyPlayed(
+          uniqueItems(
+            parsed
+              .map(normalizeSong)
+              .filter((song) => song?.id)
+          ).slice(0, 20)
         );
-
-        return [];
       }
-
-      const playlistId =
-        getPlaylistId(playlist);
-
-      if (!playlistId) {
-        console.warn(
-          `No playlist ID found for ${language}.`,
-          playlist
-        );
-
-        return [];
-      }
-
-      const playlistResponse =
-        await fetchplaylistsByID(playlistId);
-
-      const songs =
-        getSongsFromResponse(playlistResponse);
-
-      return songs;
-    } catch (err) {
-      console.error(
-        `${language} New Releases Error:`,
-        err
-      );
-
-      return [];
+    } catch (storageError) {
+      console.error("Recently played error:", storageError);
+      setRecentlyPlayed([]);
     }
-  };
-
-
-  // =========================================================
-  // FETCH DATA
-  // =========================================================
+  }, [currentSong]);
 
   useEffect(() => {
-    let mounted = true;
+    const loadHomeData = async () => {
+      setLoading(true);
+      setError("");
 
-    const loadData = async () => {
       try {
-        setLoading(true);
-        setError("");
-
-
-        // =====================================================
-        // LOAD MAIN DATA
-        // =====================================================
-
         const [
-          trendingResponse,
-          latestResponse,
-          albumResponse,
-          playlistResponse,
-        ] = await Promise.all([
-          fetchplaylistsByID(10763385),
-          fetchplaylistsByID(80802063),
+          tamilSongResponse,
+          malayalamSongResponse,
+          hindiSongResponse,
 
-          searchAlbumByQuery(
-            "Tamil, Malayalam"
-          ),
+          tamilAlbumResponse,
+          malayalamAlbumResponse,
+          hindiAlbumResponse,
 
-          searchPlayListByQuery(
-            "Tamil, Malayalam"
-          ),
-        ]);
+          tamilPlaylistResponse,
+          malayalamPlaylistResponse,
+          hindiPlaylistResponse,
 
-
-        if (!mounted) {
-          return;
-        }
-
-
-        // =====================================================
-        // LOAD LANGUAGE NEW RELEASES
-        //
-        // allSettled prevents one language API failure
-        // from breaking the entire homepage.
-        // =====================================================
-
-        const [
-          tamilResult,
-          malayalamResult,
-          hindiResult,
-          englishResult,
+          radioResponse,
         ] = await Promise.allSettled([
-          loadLanguageNewReleases("Tamil"),
-          loadLanguageNewReleases("Malayalam"),
-          loadLanguageNewReleases("Hindi"),
-          loadLanguageNewReleases("English"),
+          getTamilNewSongs(30),
+          getMalayalamNewSongs(30),
+          getHindiNewSongs(30),
+
+          getTamilNewAlbums(20),
+          getMalayalamNewAlbums(20),
+          getHindiNewAlbums(20),
+
+          getTamilNewPlaylists(20),
+          getMalayalamNewPlaylists(20),
+          getHindiNewPlaylists(20),
+
+          getLanguageFeaturedRadios(),
         ]);
 
+        if (!mountedRef.current) return;
 
-        if (!mounted) {
-          return;
-        }
+        const getValue = (result) =>
+          result?.status === "fulfilled" ? result.value : [];
 
-
-        // =====================================================
-        // TRENDING
-        // =====================================================
-
-        const trendingSongs =
-          getSongsFromResponse(
-            trendingResponse
-          );
-
-        setTrending(trendingSongs);
-
-
-        // =====================================================
-        // LATEST SONGS
-        // =====================================================
-
-        const newSongs =
-          getSongsFromResponse(
-            latestResponse
-          );
-
-        setLatestSongs(newSongs);
-
-
-        // =====================================================
-        // TAMIL NEW RELEASES
-        // =====================================================
-
-        setTamilNewReleases(
-          tamilResult.status === "fulfilled"
-            ? getArray(tamilResult.value)
-            : []
+        setTamilSongs(
+          normalizeSongs(getValue(tamilSongResponse), 30)
         );
 
-
-        // =====================================================
-        // MALAYALAM NEW RELEASES
-        // =====================================================
-
-        setMalayalamNewReleases(
-          malayalamResult.status === "fulfilled"
-            ? getArray(malayalamResult.value)
-            : []
+        setMalayalamSongs(
+          normalizeSongs(getValue(malayalamSongResponse), 30)
         );
 
-
-        // =====================================================
-        // HINDI NEW RELEASES
-        // =====================================================
-
-        setHindiNewReleases(
-          hindiResult.status === "fulfilled"
-            ? getArray(hindiResult.value)
-            : []
+        setHindiSongs(
+          normalizeSongs(getValue(hindiSongResponse), 30)
         );
 
-
-        // =====================================================
-        // ENGLISH NEW RELEASES
-        // =====================================================
-
-        setEnglishNewReleases(
-          englishResult.status === "fulfilled"
-            ? getArray(englishResult.value)
-            : []
+        setTamilAlbums(
+          normalizeCards(getValue(tamilAlbumResponse), 20)
         );
 
-
-        // =====================================================
-        // ALBUMS
-        // =====================================================
-
-        const albumResults =
-          albumResponse?.data?.results;
-
-        setAlbums(
-          Array.isArray(albumResults)
-            ? albumResults
-            : []
+        setMalayalamAlbums(
+          normalizeCards(getValue(malayalamAlbumResponse), 20)
         );
 
-
-        // =====================================================
-        // PLAYLISTS
-        // =====================================================
-
-        const playlistResults =
-          playlistResponse?.data?.results;
-
-        setPlaylists(
-          Array.isArray(playlistResults)
-            ? playlistResults
-            : []
+        setHindiAlbums(
+          normalizeCards(getValue(hindiAlbumResponse), 20)
         );
 
+        setTamilPlaylists(
+          normalizeCards(getValue(tamilPlaylistResponse), 20)
+        );
 
-        // =====================================================
-        // ARTISTS
-        // =====================================================
+        setMalayalamPlaylists(
+          normalizeCards(getValue(malayalamPlaylistResponse), 20)
+        );
 
-        if (
-          Array.isArray(
-            artistData?.results
-          )
-        ) {
-          setArtists(
-            artistData.results
-          );
-        } else if (
-          Array.isArray(artistData)
-        ) {
-          setArtists(artistData);
+        setHindiPlaylists(
+          normalizeCards(getValue(hindiPlaylistResponse), 20)
+        );
+
+        const radioValue = getValue(radioResponse);
+
+        if (Array.isArray(radioValue)) {
+          setRadios(radioValue);
+        } else if (Array.isArray(radioValue?.data)) {
+          setRadios(radioValue.data);
         } else {
-          setArtists([]);
+          setRadios([]);
         }
-      } catch (err) {
-        console.error(
-          "MainSection Error:",
-          err
-        );
+      } catch (loadError) {
+        console.error("MainSection API error:", loadError);
 
-        if (mounted) {
+        if (mountedRef.current) {
           setError(
-            err?.message ||
+            loadError?.message ||
               "Unable to load music data. Please try again."
           );
         }
       } finally {
-        if (mounted) {
+        if (mountedRef.current) {
           setLoading(false);
         }
       }
     };
 
-
-    loadData();
-
-
-    return () => {
-      mounted = false;
-    };
+    loadHomeData();
   }, []);
 
+  const allSongs = useMemo(() => {
+    return uniqueItems([
+      ...tamilSongs,
+      ...malayalamSongs,
+      ...hindiSongs,
+      ...recentlyPlayed,
+    ]);
+  }, [
+    tamilSongs,
+    malayalamSongs,
+    hindiSongs,
+    recentlyPlayed,
+  ]);
 
-  // =========================================================
-  // LOADING
-  // =========================================================
+  const recentlyPlayedSongs = useMemo(() => {
+    return normalizeSongs(recentlyPlayed, 20);
+  }, [recentlyPlayed]);
+
+  const artistList = useMemo(() => {
+    if (!Array.isArray(artistData)) return [];
+
+    return artistData.filter(Boolean);
+  }, []);
+
+  const handlePlay = (song, queue = allSongs) => {
+    if (!song || !playMusic) return;
+
+    const normalizedSong = normalizeSong(song);
+    const normalizedQueue = normalizeSongs(queue, 100);
+
+    try {
+      playMusic(
+        normalizedSong,
+        normalizedQueue.length ? normalizedQueue : [normalizedSong]
+      );
+    } catch (firstError) {
+      try {
+        playMusic(normalizedSong);
+      } catch (secondError) {
+        console.error(
+          "Unable to play selected song:",
+          secondError || firstError
+        );
+      }
+    }
+  };
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] w-full flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-
-          <div
-            className="
-              w-10
-              h-10
-              border-4
-              border-gray-400
-              border-t-transparent
-              rounded-full
-              animate-spin
-            "
-          />
-
-          <p className="text-lg font-medium">
-            Loading...
-          </p>
-
+      <main className="main-section loading-page">
+        <div className="home-loader">
+          <div className="loader-spinner" />
+          <p>Loading MusicMax...</p>
         </div>
-      </div>
+      </main>
     );
   }
 
-
-  // =========================================================
-  // ERROR
-  // =========================================================
-
-  if (error) {
+  if (error && !allSongs.length) {
     return (
-      <div className="min-h-[60vh] w-full flex items-center justify-center px-5">
-        <div className="text-center max-w-md">
-
-          <h2 className="text-xl font-semibold text-red-500">
-            Something went wrong
-          </h2>
-
-          <p className="mt-2 text-sm opacity-70 break-words">
-            {error}
-          </p>
+      <main className="main-section error-page">
+        <div className="home-error">
+          <h2>Something went wrong</h2>
+          <p>{error}</p>
 
           <button
             type="button"
-            onClick={() =>
-              window.location.reload()
-            }
-            className="
-              mt-5
-              px-5
-              py-2
-              rounded-lg
-              bg-white
-              text-black
-              font-medium
-              hover:opacity-80
-              transition
-            "
+            onClick={() => window.location.reload()}
           >
             Try Again
           </button>
-
         </div>
-      </div>
+      </main>
     );
   }
 
-
-  // =========================================================
-  // SONG SECTION COMPONENT
-  // =========================================================
-
-  const SongSection = ({
-    title,
-    songs,
-    scrollRef,
-    emptyText = "No songs available.",
-  }) => {
-    if (!Array.isArray(songs) || songs.length === 0) {
-      return null;
-    }
-
-    return (
-      <section className="flex flex-col justify-center items-center w-full">
-
-        <h2
-          className="
-            m-4
-            mt-0
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[3.5rem]
-            lg:ml-[6.5rem]
-          "
-        >
-          {title}
-        </h2>
-
-
-        <div className="flex justify-center items-center gap-3 w-full">
-
-          {/* LEFT */}
-
+  return (
+    <main className="main-section">
+      {error ? (
+        <div className="inline-api-warning">
+          <span>{error}</span>
           <button
             type="button"
-            aria-label={`Scroll ${title} left`}
-            onClick={() =>
-              scrollLeft(scrollRef)
-            }
-            className="
-              text-3xl
-              hover:scale-125
-              transition-all
-              duration-200
-              cursor-pointer
-              h-[9rem]
-              arrow-btn
-              hidden
-              lg:flex
-              items-center
-              justify-center
-              shrink-0
-            "
+            onClick={() => window.location.reload()}
           >
-            <MdOutlineKeyboardArrowLeft />
+            Retry
           </button>
+        </div>
+      ) : null}
 
+      {/* Recently Played */}
+      {recentlyPlayedSongs.length > 0 ? (
+        <SongSection
+          title="Recently Played"
+          songs={recentlyPlayedSongs}
+          queue={recentlyPlayedSongs}
+          onPlay={handlePlay}
+        />
+      ) : null}
 
-          {/* SONGS */}
+      {/* Tamil New Songs */}
+      <SongSection
+        title="New Songs - Tamil"
+        songs={tamilSongs}
+        queue={allSongs}
+        onPlay={handlePlay}
+        viewAll="/new-releases/tamil"
+      />
 
-          <div
-            ref={scrollRef}
-            className="
-              grid
-              grid-rows-1
-              lg:grid-rows-2
-              grid-flow-col
-              justify-start
-              overflow-x-auto
-              scroll-hide
-              items-center
-              gap-3
-              lg:gap-2
-              w-full
-              px-3
-              lg:px-0
-              scroll-smooth
-            "
-          >
+      {/* Malayalam New Songs */}
+      <SongSection
+        title="New Songs - Malayalam"
+        songs={malayalamSongs}
+        queue={allSongs}
+        onPlay={handlePlay}
+        viewAll="/new-releases/malayalam"
+      />
 
-            {songs.map((song, index) => (
-              <SongGrid
+      {/* Hindi New Songs */}
+      <SongSection
+        title="New Songs - Hindi"
+        songs={hindiSongs}
+        queue={allSongs}
+        onPlay={handlePlay}
+        viewAll="/new-releases/hindi"
+      />
+
+      {/* Albums */}
+      <section className="music-section">
+        <SectionTitle>Albums - Tamil</SectionTitle>
+        <CardGrid items={tamilAlbums} type="album" />
+      </section>
+
+      <section className="music-section">
+        <SectionTitle>Albums - Malayalam</SectionTitle>
+        <CardGrid items={malayalamAlbums} type="album" />
+      </section>
+
+      <section className="music-section">
+        <SectionTitle>Albums - Hindi</SectionTitle>
+        <CardGrid items={hindiAlbums} type="album" />
+      </section>
+
+      {/* Artists */}
+      {artistList.length > 0 ? (
+        <section className="music-section artists-section">
+          <SectionTitle>Artists</SectionTitle>
+
+          <div className="artist-grid">
+            {artistList.map((artist, index) => (
+              <ArtistItems
                 key={
-                  song?.id ??
-                  song?.songId ??
-                  song?.song_id ??
-                  song?.trackId ??
-                  `${title}-${index}`
+                  artist?.id ||
+                  artist?.artistId ||
+                  artist?.name ||
+                  index
                 }
-                {...song}
-                songs={songs}
+                {...artist}
               />
             ))}
-
           </div>
-
-
-          {/* RIGHT */}
-
-          <button
-            type="button"
-            aria-label={`Scroll ${title} right`}
-            onClick={() =>
-              scrollRight(scrollRef)
-            }
-            className="
-              text-3xl
-              hover:scale-125
-              transition-all
-              duration-200
-              cursor-pointer
-              h-[9rem]
-              arrow-btn
-              hidden
-              lg:flex
-              items-center
-              justify-center
-              shrink-0
-            "
-          >
-            <MdOutlineKeyboardArrowRight />
-          </button>
-
-        </div>
-
-      </section>
-    );
-  };
-
-
-  // =========================================================
-  // MAIN UI
-  // =========================================================
-
-  return (
-    <main
-      className="
-        pt-[3rem]
-        lg:pt-5
-        my-[2rem]
-        mt-[5rem]
-        lg:my-[4rem]
-        flex
-        flex-col
-        items-center
-        overflow-x-clip
-        gap-[0.3rem]
-        w-full
-      "
-    >
-
-      {/* =====================================================
-          GREETING
-      ====================================================== */}
-
-      <div
-        className="
-          hidden
-          lg:block
-          text-2xl
-          w-full
-          font-semibold
-          lg:ml-[5.5rem]
-          m-1
-        "
-      >
-        {getGreeting()}
-      </div>
-
-
-      {/* =====================================================
-          RECENTLY PLAYED
-      ====================================================== */}
-
-      {recentlyPlayedSongs.length > 0 && (
-        <section className="flex flex-col justify-center items-center w-full">
-
-          <h2
-            className="
-              m-4
-              mt-0
-              text-xl
-              lg:text-2xl
-              font-semibold
-              w-full
-              ml-[3.5rem]
-              lg:ml-[6.5rem]
-            "
-          >
-            Recently Played
-          </h2>
-
-
-          <div className="flex justify-center items-center gap-3 w-full">
-
-            <button
-              type="button"
-              aria-label="Scroll recently played left"
-              onClick={() =>
-                scrollLeft(
-                  recentlyPlayedScrollRef
-                )
-              }
-              className="
-                text-3xl
-                hover:scale-125
-                transition-all
-                duration-200
-                cursor-pointer
-                h-[9rem]
-                arrow-btn
-                hidden
-                lg:flex
-                items-center
-                justify-center
-                shrink-0
-              "
-            >
-              <MdOutlineKeyboardArrowLeft />
-            </button>
-
-
-            <div
-              ref={recentlyPlayedScrollRef}
-              className="
-                grid
-                grid-rows-1
-                grid-flow-col
-                justify-start
-                overflow-x-auto
-                scroll-hide
-                items-center
-                gap-3
-                lg:gap-2
-                w-full
-                px-3
-                lg:px-0
-                scroll-smooth
-              "
-            >
-
-              {recentlyPlayedSongs.map(
-                (song, index) => (
-                  <SongGrid
-                    key={
-                      song?.id ??
-                      song?.songId ??
-                      song?.song_id ??
-                      index
-                    }
-                    {...song}
-                    songs={recentlyPlayedSongs}
-                  />
-                )
-              )}
-
-            </div>
-
-
-            <button
-              type="button"
-              aria-label="Scroll recently played right"
-              onClick={() =>
-                scrollRight(
-                  recentlyPlayedScrollRef
-                )
-              }
-              className="
-                text-3xl
-                hover:scale-125
-                transition-all
-                duration-200
-                cursor-pointer
-                h-[9rem]
-                arrow-btn
-                hidden
-                lg:flex
-                items-center
-                justify-center
-                shrink-0
-              "
-            >
-              <MdOutlineKeyboardArrowRight />
-            </button>
-
-          </div>
-
         </section>
-      )}
+      ) : null}
 
-
-      {/* =====================================================
-          NEW SONGS
-      ====================================================== */}
-
-      <SongSection
-        title="New Songs"
-        songs={latestSongs}
-        scrollRef={latestSongsScrollRef}
-      />
-
-      <br />
-
-
-      {/* =====================================================
-          TAMIL NEW RELEASES
-      ====================================================== */}
-
-      <SongSection
-        title="Tamil New Releases"
-        songs={tamilNewReleases}
-        scrollRef={tamilNewReleasesScrollRef}
-      />
-
-      <br />
-
-
-      {/* =====================================================
-          MALAYALAM NEW RELEASES
-      ====================================================== */}
-
-      <SongSection
-        title="Malayalam New Releases"
-        songs={malayalamNewReleases}
-        scrollRef={malayalamNewReleasesScrollRef}
-      />
-
-      <br />
-
-
-      {/* =====================================================
-          HINDI NEW RELEASES
-      ====================================================== */}
-
-      <SongSection
-        title="Hindi New Releases"
-        songs={hindiNewReleases}
-        scrollRef={hindiNewReleasesScrollRef}
-      />
-
-      <br />
-
-
-      {/* =====================================================
-          ENGLISH NEW RELEASES
-      ====================================================== */}
-
-      <SongSection
-        title="English New Releases"
-        songs={englishNewReleases}
-        scrollRef={englishNewReleasesScrollRef}
-      />
-
-      <br />
-
-
-      {/* =====================================================
-          TODAY TRENDING
-      ====================================================== */}
-
-      <section className="flex flex-col justify-center items-center w-full">
-
-        <h2
-          className="
-            m-4
-            mt-0
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[3.5rem]
-            lg:ml-[6.5rem]
-          "
-        >
-          Today Trending
-        </h2>
-
-
-        <div className="flex justify-center items-center gap-3 w-full">
-
-          <button
-            type="button"
-            aria-label="Scroll trending songs left"
-            onClick={() =>
-              scrollLeft(
-                trendingScrollRef
-              )
-            }
-            className="
-              text-3xl
-              hover:scale-125
-              transition-all
-              duration-200
-              cursor-pointer
-              h-[9rem]
-              arrow-btn
-              hidden
-              lg:flex
-              items-center
-              justify-center
-              shrink-0
-            "
-          >
-            <MdOutlineKeyboardArrowLeft />
-          </button>
-
-
-          <div
-            ref={trendingScrollRef}
-            className="
-              grid
-              grid-rows-1
-              sm:grid-rows-2
-              grid-flow-col
-              justify-start
-              overflow-x-auto
-              scroll-hide
-              items-center
-              gap-3
-              lg:gap-2
-              w-full
-              px-3
-              lg:px-0
-              scroll-smooth
-            "
-          >
-
-            {trending.map(
-              (song, index) => (
-                <SongGrid
-                  key={
-                    song?.id ??
-                    song?.songId ??
-                    song?.song_id ??
-                    index
-                  }
-                  {...song}
-                  songs={trending}
-                />
-              )
-            )}
-
-          </div>
-
-
-          <button
-            type="button"
-            aria-label="Scroll trending songs right"
-            onClick={() =>
-              scrollRight(
-                trendingScrollRef
-              )
-            }
-            className="
-              text-3xl
-              hover:scale-125
-              transition-all
-              duration-200
-              cursor-pointer
-              h-[9rem]
-              arrow-btn
-              hidden
-              lg:flex
-              items-center
-              justify-center
-              shrink-0
-            "
-          >
-            <MdOutlineKeyboardArrowRight />
-          </button>
-
-        </div>
-
+      {/* Playlists */}
+      <section className="music-section">
+        <SectionTitle>Playlists - Tamil</SectionTitle>
+        <CardGrid items={tamilPlaylists} type="playlist" />
       </section>
 
-      <br />
-
-
-      {/* =====================================================
-          TOP ALBUMS
-      ====================================================== */}
-
-      <section className="w-full">
-
-        <h2
-          className="
-            m-4
-            mt-0
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[1rem]
-            lg:ml-[3rem]
-          "
-        >
-          Top Albums
-        </h2>
-
-
-        {albums.length > 0 ? (
-          <AlbumSlider
-            albums={albums}
-          />
-        ) : (
-          <p className="px-5 opacity-60">
-            No albums available.
-          </p>
-        )}
-
+      <section className="music-section">
+        <SectionTitle>Playlists - Malayalam</SectionTitle>
+        <CardGrid
+          items={malayalamPlaylists}
+          type="playlist"
+        />
       </section>
 
-      <br />
-
-
-      {/* =====================================================
-          TOP ARTISTS
-      ====================================================== */}
-
-      <section className="w-full">
-
-        <h2
-          className="
-            pr-1
-            m-4
-            mt-0
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[1rem]
-            lg:ml-[3.5rem]
-          "
-        >
-          Top Artists
-        </h2>
-
-
-        {artists.length > 0 ? (
-          <ArtistSlider
-            artists={artists}
-          />
-        ) : (
-          <p className="px-5 opacity-60">
-            No artists available.
-          </p>
-        )}
-
+      <section className="music-section">
+        <SectionTitle>Playlists - Hindi</SectionTitle>
+        <CardGrid items={hindiPlaylists} type="playlist" />
       </section>
 
-      <br />
-
-
-      {/* =====================================================
-          TOP PLAYLISTS
-      ====================================================== */}
-
-      <section className="w-full flex flex-col gap-3">
-
-        <h2
-          className="
-            m-1
-            text-xl
-            lg:text-2xl
-            font-semibold
-            w-full
-            ml-[1rem]
-            lg:ml-[2.8rem]
-          "
-        >
-          Top Playlists
-        </h2>
-
-
-        {playlists.length > 0 ? (
-          <PlaylistSlider
-            playlists={playlists}
-          />
-        ) : (
-          <p className="px-5 opacity-60">
-            No playlists available.
-          </p>
-        )}
-
-      </section>
-
+      {/* Featured Radio */}
+      <RadioSection radios={radios} />
     </main>
   );
 };
-
 
 export default MainSection;
