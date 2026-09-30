@@ -1,6 +1,5 @@
 
-const api_url = import.meta.env.VITE_API_URL;
-console.log("API URL:", api_url);
+const api_url = 'https://jiosaavndev.vercel.app/api';
 if (!api_url) {
     console.log("Error Fetching API");
 };
@@ -9,7 +8,7 @@ if (!api_url) {
 
 export const getSuggestionSong = async (id) => {
     try{
-        const result = await fetch(`${api_url}songs/${id}/suggestions?&limit=30`);
+        const result = await fetch(`${api_url}songs/${id}/suggestions?&limit=150`);
         const data = await result.json();
         if(!result.ok) {
             throw new Error(data.message || 'Failed to Fetch Artist Data');
@@ -26,7 +25,7 @@ export const getSuggestionSong = async (id) => {
 
 export const getSearchData = async (e) => {
     try{
-        const result = await fetch(`${api_url}search?query=${e}&limit=30`);
+        const result = await fetch(`${api_url}search?query=${e}&limit=150`);
         const data = await result.json();
         if(!result.ok) {
             throw new Error(data.message || 'Failed to Fetch Artist Data');
@@ -86,7 +85,7 @@ export const getSongById = async (songId) => {
 
 export const searchAlbumByQuery = async (query) => {
     try {
-        const Albums = await fetch(`${api_url}search/albums?query=${query}&limit=30`);
+        const Albums = await fetch(`${api_url}search/albums?query=${query}&limit=130`);
         const data = await Albums.json();
         if (!Albums.ok) {
             throw new Error(data.message || 'Failed to fetch Album data');
@@ -100,7 +99,7 @@ export const searchAlbumByQuery = async (query) => {
 
 export const searchArtistByQuery = async (query) => {
     try{
-        const Artists = await fetch(`${api_url}search/artists?query=${query}&limit=15`);
+        const Artists = await fetch(`${api_url}search/artists?query=${query}&limit=130`);
         const data = await Artists.json();
         if(!Artists.ok) {
             throw new Error(data.message || 'Failed to Fetch Artist Data');
@@ -116,7 +115,7 @@ export const searchArtistByQuery = async (query) => {
 
 export const fetchAlbumByID = async (ID) => { 
     try{
-        const Album = await fetch(`${api_url}albums?id=${ID}&limit=30`);
+        const Album = await fetch(`${api_url}albums?id=${ID}&limit=130`);
         const data = await Album.json();
         if(!Album.ok) {
             throw new Error(data.message || 'Failed to Fetch Artist Data');
@@ -149,7 +148,7 @@ export const fetchArtistByID = async (ID) => {
 
 export const searchPlayListByQuery = async (query) => { 
     try{
-        const playlists = await fetch(`${api_url}search/playlists?query=${query}&limit=20`);
+        const playlists = await fetch(`${api_url}search/playlists?query=${query}&limit=130`);
         const data = await playlists.json();
         if(!playlists.ok) {
             throw new Error(data.message || 'Failed to Fetch Artist Data');
@@ -164,7 +163,22 @@ export const searchPlayListByQuery = async (query) => {
 
 export const fetchplaylistsByID = async (ID) => { 
     try{
-        const playlists = await fetch(`${api_url}playlists?id=${ID}&limit=40`);
+        const playlists = await fetch(`${api_url}playlists?id=${ID}&limit=130`);
+        const data = await playlists.json();
+        if(!playlists.ok) {
+            throw new Error(data.message || 'Failed to Fetch Artist Data');
+        }
+        return data;
+    }
+    catch{
+        console.log('API Error: ', Error );
+        throw Error;
+    }
+};
+
+export const fetchSongSuggestionsByID = async (ID) => { 
+    try{
+        const playlists = await fetch(`${api_url}?id=${ID}&limit=130`);
         const data = await playlists.json();
         if(!playlists.ok) {
             throw new Error(data.message || 'Failed to Fetch Artist Data');
