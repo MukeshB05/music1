@@ -13,7 +13,6 @@ import {
 } from "react-icons/io";
 
 import { IoShareSocial } from "react-icons/io5";
-
 import { PiShuffleBold } from "react-icons/pi";
 
 import {
@@ -29,7 +28,6 @@ import {
 } from "react-icons/fa";
 
 import { MdDownload } from "react-icons/md";
-
 import { CiMaximize1 } from "react-icons/ci";
 
 import {
@@ -38,7 +36,6 @@ import {
 } from "react-icons/md";
 
 import { Link } from "react-router-dom";
-
 import he from "he";
 
 import MusicContext from "../context/MusicContext";
@@ -1576,7 +1573,8 @@ const Player = () => {
 
   const progressStyle = {
     "--progress": `${progress}%`,
-    "--progress-track": progressTrack,
+    "--progress-track":
+      progressTrack,
   };
 
   /* =======================================================
@@ -1932,8 +1930,6 @@ const Player = () => {
                   "
                 >
                   <div className="relative">
-                    {/* Cover glow */}
-
                     <div
                       className="
                         pointer-events-none
@@ -1945,8 +1941,6 @@ const Player = () => {
                         blur-3xl
                       "
                     />
-
-                    {/* Correctly sized cover */}
 
                     <img
                       src={
@@ -2189,8 +2183,6 @@ const Player = () => {
                   sm:gap-7
                 "
               >
-                {/* SHUFFLE */}
-
                 <button
                   type="button"
                   onClick={() =>
@@ -2213,8 +2205,6 @@ const Player = () => {
                   <PiShuffleBold className="text-xl sm:text-2xl" />
                 </button>
 
-                {/* PREVIOUS */}
-
                 <button
                   type="button"
                   onClick={() =>
@@ -2233,8 +2223,6 @@ const Player = () => {
                 >
                   <IoMdSkipBackward className="text-2xl sm:text-3xl" />
                 </button>
-
-                {/* PLAY */}
 
                 <button
                   type="button"
@@ -2270,8 +2258,6 @@ const Player = () => {
                   )}
                 </button>
 
-                {/* NEXT */}
-
                 <button
                   type="button"
                   onClick={() =>
@@ -2290,8 +2276,6 @@ const Player = () => {
                 >
                   <IoMdSkipForward className="text-2xl sm:text-3xl" />
                 </button>
-
-                {/* REPEAT */}
 
                 <button
                   type="button"
@@ -2342,8 +2326,6 @@ const Player = () => {
                   backdrop-blur-2xl
                 "
               >
-                {/* COVER */}
-
                 <button
                   type="button"
                   onClick={() =>
@@ -2370,8 +2352,6 @@ const Player = () => {
                 >
                   Cover
                 </button>
-
-                {/* LYRICS */}
 
                 <button
                   type="button"
@@ -2400,8 +2380,6 @@ const Player = () => {
                   Lyrics
                 </button>
 
-                {/* DIVIDER */}
-
                 <div
                   className={`
                     mx-1
@@ -2414,8 +2392,6 @@ const Player = () => {
                     }
                   `}
                 />
-
-                {/* LIKE */}
 
                 <button
                   type="button"
@@ -2451,8 +2427,6 @@ const Player = () => {
                   )}
                 </button>
 
-                {/* SHARE */}
-
                 <button
                   type="button"
                   onClick={share}
@@ -2474,8 +2448,6 @@ const Player = () => {
                 >
                   <IoShareSocial className="text-lg" />
                 </button>
-
-                {/* DOWNLOAD */}
 
                 <button
                   type="button"
@@ -2749,39 +2721,79 @@ const Player = () => {
       </div>
 
       {/* =====================================================
-          PROGRESS BAR
+          CORRECTED MUSIC PROGRESS BAR
       ===================================================== */}
 
       <style>{`
+        /* =====================================================
+           RANGE CONTAINER
+
+           IMPORTANT:
+           The input is 12px tall while the visible track
+           remains 4px. This gives the thumb a proper center.
+        ===================================================== */
+
         .music-progress {
           appearance: none;
           -webkit-appearance: none;
 
           width: 100%;
-          height: 4px;
+          height: 12px;
+
+          margin: 0;
+          padding: 0;
+
+          border: 0;
+          outline: none;
 
           border-radius: 9999px;
 
           cursor: pointer;
-          outline: none;
 
           background: linear-gradient(
             to right,
             #ef4444 0%,
             #ef4444 var(--progress, 0%),
-            var(--progress-track, rgba(0,0,0,0.20))
+            var(
+              --progress-track,
+              rgba(0, 0, 0, 0.20)
+            )
               var(--progress, 0%),
-            var(--progress-track, rgba(0,0,0,0.20))
+            var(
+              --progress-track,
+              rgba(0, 0, 0, 0.20)
+            )
               100%
           );
 
           transition:
-            background 0.2s ease;
+            background 0.15s ease;
         }
 
-        /* ================================================
+        /* =====================================================
+           CHROME / EDGE / SAFARI TRACK
+        ===================================================== */
+
+        .music-progress::-webkit-slider-runnable-track {
+          width: 100%;
+          height: 4px;
+
+          border: 0;
+          border-radius: 9999px;
+
+          background: transparent;
+        }
+
+        /* =====================================================
            CHROME / EDGE / SAFARI THUMB
-        ================================================ */
+
+           12px thumb
+           4px track
+
+           margin-top: -4px centers:
+
+           (12px - 4px) / 2 = 4px
+        ===================================================== */
 
         .music-progress::-webkit-slider-thumb {
           appearance: none;
@@ -2790,77 +2802,157 @@ const Player = () => {
           width: 12px;
           height: 12px;
 
+          margin-top: -4px;
+
+          padding: 0;
+
           border-radius: 50%;
+
+          border: 2px solid #ffffff;
 
           background: #ef4444;
 
-          border: 2px solid white;
-
           cursor: pointer;
+
+          box-sizing: border-box;
 
           box-shadow:
             0 1px 5px
             rgba(0, 0, 0, 0.30);
 
           transition:
-            transform 0.15s ease;
+            transform 0.15s ease,
+            box-shadow 0.15s ease;
         }
 
         .music-progress::-webkit-slider-thumb:hover {
           transform: scale(1.2);
+
+          box-shadow:
+            0 2px 8px
+            rgba(239, 68, 68, 0.45);
         }
 
-        /* ================================================
+        .music-progress::-webkit-slider-thumb:active {
+          transform: scale(1.08);
+        }
+
+        /* =====================================================
+           FIREFOX TRACK
+        ===================================================== */
+
+        .music-progress::-moz-range-track {
+          width: 100%;
+          height: 4px;
+
+          border: 0;
+          border-radius: 9999px;
+
+          background: var(
+            --progress-track,
+            rgba(0, 0, 0, 0.20)
+          );
+        }
+
+        /* =====================================================
+           FIREFOX FILLED TRACK
+        ===================================================== */
+
+        .music-progress::-moz-range-progress {
+          height: 4px;
+
+          border: 0;
+          border-radius: 9999px;
+
+          background: #ef4444;
+        }
+
+        /* =====================================================
            FIREFOX THUMB
-        ================================================ */
+        ===================================================== */
 
         .music-progress::-moz-range-thumb {
           width: 12px;
           height: 12px;
 
+          padding: 0;
+
           border-radius: 50%;
+
+          border: 2px solid #ffffff;
 
           background: #ef4444;
 
-          border: 2px solid white;
-
           cursor: pointer;
+
+          box-sizing: border-box;
 
           box-shadow:
             0 1px 5px
             rgba(0, 0, 0, 0.30);
 
           transition:
-            transform 0.15s ease;
+            transform 0.15s ease,
+            box-shadow 0.15s ease;
         }
 
         .music-progress::-moz-range-thumb:hover {
           transform: scale(1.2);
+
+          box-shadow:
+            0 2px 8px
+            rgba(239, 68, 68, 0.45);
         }
 
-        /* ================================================
-           TRACK
-        ================================================ */
-
-        .music-progress::-webkit-slider-runnable-track {
-          height: 4px;
-          border-radius: 9999px;
+        .music-progress::-moz-range-thumb:active {
+          transform: scale(1.08);
         }
 
-        .music-progress::-moz-range-track {
-          height: 4px;
-          border-radius: 9999px;
-        }
-
-        /* ================================================
+        /* =====================================================
            FOCUS
-        ================================================ */
+        ===================================================== */
 
         .music-progress:focus-visible {
           outline: 2px solid
             rgba(239, 68, 68, 0.45);
 
           outline-offset: 3px;
+        }
+
+        /* =====================================================
+           MOBILE TOUCH TARGET
+
+           The visible line stays 4px, but the clickable
+           area is 12px high, making it easier to seek.
+        ===================================================== */
+
+        @media (max-width: 640px) {
+          .music-progress {
+            height: 12px;
+          }
+
+          .music-progress::-webkit-slider-runnable-track {
+            height: 4px;
+          }
+
+          .music-progress::-webkit-slider-thumb {
+            width: 12px;
+            height: 12px;
+            margin-top: -4px;
+          }
+
+          .music-progress::-moz-range-track {
+            height: 4px;
+          }
+
+          .music-progress::-moz-range-progress {
+            height: 4px;
+          }
+
+          .music-progress::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+          }
         }
       `}</style>
     </div>
