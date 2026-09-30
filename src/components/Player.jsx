@@ -44,7 +44,6 @@ import he from "he";
 import MusicContext from "../context/MusicContext";
 
 import ArtistItems from "./Items/ArtistItems";
-
 import SongGrid from "./SongGrid";
 
 import {
@@ -344,14 +343,6 @@ const Player = () => {
      AUDIO
   ======================================================= */
 
-  /*
-    Your MusicContext appears to provide
-    currentSong.audio as the actual HTMLAudioElement.
-
-    This check prevents errors if audio is temporarily
-    missing or is not an audio element.
-  */
-
   const audio = useMemo(() => {
     const value =
       currentSong?.audio;
@@ -392,6 +383,15 @@ const Player = () => {
           )
         )
       : 0;
+
+  /* =======================================================
+     PROGRESS COLORS
+  ======================================================= */
+
+  const progressTrack =
+    isDark
+      ? "rgba(255,255,255,0.24)"
+      : "rgba(0,0,0,0.20)";
 
   /* =======================================================
      ARTWORK
@@ -604,18 +604,17 @@ const Player = () => {
     };
 
     const ended = async () => {
-      // Repeat One is handled by HTMLAudioElement.loop.
       if (repeatMode === "one") {
         return;
       }
 
-      // MusicContext owns the complete queue. Calling nextSong()
-      // here immediately starts the next item when the current
-      // audio reaches its natural end.
       try {
         await nextSong?.();
       } catch (error) {
-        console.error("Auto-play next song failed:", error);
+        console.error(
+          "Auto-play next song failed:",
+          error
+        );
       }
     };
 
@@ -1548,7 +1547,7 @@ const Player = () => {
     );
 
   /* =======================================================
-     THEME
+     THEME CLASSES
   ======================================================= */
 
   const panelClass =
@@ -1570,6 +1569,15 @@ const Player = () => {
     isDark
       ? "text-white/70 hover:text-white"
       : "text-black/65 hover:text-black";
+
+  /* =======================================================
+     PROGRESS STYLE
+  ======================================================= */
+
+  const progressStyle = {
+    "--progress": `${progress}%`,
+    "--progress-track": progressTrack,
+  };
 
   /* =======================================================
      UI
@@ -1752,9 +1760,9 @@ const Player = () => {
                       music-progress
                       flex-1
                     "
-                    style={{
-                      "--progress": `${progress}%`,
-                    }}
+                    style={
+                      progressStyle
+                    }
                   />
 
                   <span className="text-[10px] opacity-60">
@@ -1869,8 +1877,7 @@ const Player = () => {
               "
             >
               {/* =================================================
-                  FLOATING CLOSE BUTTON
-                  No MUSICMAX top navbar
+                  CLOSE
               ================================================= */}
 
               <button
@@ -1916,17 +1923,20 @@ const Player = () => {
                 <div
                   className="
                     flex
-                    min-h-[38vh]
-                    flex-1
                     w-full
                     items-center
                     justify-center
                     py-5
+                    sm:py-7
+                    md:py-8
                   "
                 >
                   <div className="relative">
+                    {/* Cover glow */}
+
                     <div
                       className="
+                        pointer-events-none
                         absolute
                         inset-0
                         scale-90
@@ -1936,6 +1946,8 @@ const Player = () => {
                       "
                     />
 
+                    {/* Correctly sized cover */}
+
                     <img
                       src={
                         artwork ||
@@ -1944,19 +1956,20 @@ const Player = () => {
                       alt={songName}
                       className="
                         relative
-                        h-52
-                        w-52
-                        rounded-[1.75rem]
+                        block
+                        h-[220px]
+                        w-[220px]
+                        rounded-[1.5rem]
                         object-cover
-                        shadow-[0_30px_100px_rgba(0,0,0,0.7)]
+                        shadow-[0_25px_80px_rgba(0,0,0,0.55)]
                         ring-1
                         ring-white/10
-                        sm:h-64
-                        sm:w-64
-                        md:h-72
-                        md:w-72
-                        lg:h-80
-                        lg:w-80
+                        sm:h-[260px]
+                        sm:w-[260px]
+                        md:h-[300px]
+                        md:w-[300px]
+                        lg:h-[320px]
+                        lg:w-[320px]
                       "
                       onError={(event) => {
                         event.currentTarget.src =
@@ -2150,9 +2163,9 @@ const Player = () => {
                     music-progress
                     flex-1
                   "
-                  style={{
-                    "--progress": `${progress}%`,
-                  }}
+                  style={
+                    progressStyle
+                  }
                 />
 
                 <span className="w-10 text-right text-[11px] opacity-50">
@@ -2310,9 +2323,7 @@ const Player = () => {
               </div>
 
               {/* =================================================
-                  UNIFIED PLAYER ACTION BAR
-
-                  COVER | LYRICS | LIKE | SHARE | DOWNLOAD
+                  ACTION BAR
               ================================================= */}
 
               <div
@@ -2738,47 +2749,118 @@ const Player = () => {
       </div>
 
       {/* =====================================================
-          RANGE BAR STYLE
-          Put this in your global CSS if you don't already
-          have .music-progress styling.
+          PROGRESS BAR
       ===================================================== */}
 
       <style>{`
         .music-progress {
           appearance: none;
           -webkit-appearance: none;
+
+          width: 100%;
           height: 4px;
+
           border-radius: 9999px;
+
           cursor: pointer;
           outline: none;
-          background:
-            linear-gradient(
-              to right,
-              #ef4444 0%,
-              #ef4444 var(--progress, 0%),
-              rgba(255,255,255,0.15) var(--progress, 0%),
-              rgba(255,255,255,0.15) 100%
-            );
+
+          background: linear-gradient(
+            to right,
+            #ef4444 0%,
+            #ef4444 var(--progress, 0%),
+            var(--progress-track, rgba(0,0,0,0.20))
+              var(--progress, 0%),
+            var(--progress-track, rgba(0,0,0,0.20))
+              100%
+          );
+
+          transition:
+            background 0.2s ease;
         }
+
+        /* ================================================
+           CHROME / EDGE / SAFARI THUMB
+        ================================================ */
 
         .music-progress::-webkit-slider-thumb {
           appearance: none;
           -webkit-appearance: none;
+
           width: 12px;
           height: 12px;
+
           border-radius: 50%;
+
           background: #ef4444;
+
+          border: 2px solid white;
+
           cursor: pointer;
-          border: none;
+
+          box-shadow:
+            0 1px 5px
+            rgba(0, 0, 0, 0.30);
+
+          transition:
+            transform 0.15s ease;
         }
+
+        .music-progress::-webkit-slider-thumb:hover {
+          transform: scale(1.2);
+        }
+
+        /* ================================================
+           FIREFOX THUMB
+        ================================================ */
 
         .music-progress::-moz-range-thumb {
           width: 12px;
           height: 12px;
+
           border-radius: 50%;
+
           background: #ef4444;
+
+          border: 2px solid white;
+
           cursor: pointer;
-          border: none;
+
+          box-shadow:
+            0 1px 5px
+            rgba(0, 0, 0, 0.30);
+
+          transition:
+            transform 0.15s ease;
+        }
+
+        .music-progress::-moz-range-thumb:hover {
+          transform: scale(1.2);
+        }
+
+        /* ================================================
+           TRACK
+        ================================================ */
+
+        .music-progress::-webkit-slider-runnable-track {
+          height: 4px;
+          border-radius: 9999px;
+        }
+
+        .music-progress::-moz-range-track {
+          height: 4px;
+          border-radius: 9999px;
+        }
+
+        /* ================================================
+           FOCUS
+        ================================================ */
+
+        .music-progress:focus-visible {
+          outline: 2px solid
+            rgba(239, 68, 68, 0.45);
+
+          outline-offset: 3px;
         }
       `}</style>
     </div>
