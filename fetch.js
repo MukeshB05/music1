@@ -1,210 +1,417 @@
+const API_URL = "https://jiosaavndev.vercel.app/api/";
 
-const api_url = 'https://jiosaavndev.vercel.app/api';
-if (!api_url) {
-    console.log("Error Fetching API");
-};
+/*
+|--------------------------------------------------------------------------
+| Default Settings
+|--------------------------------------------------------------------------
+*/
+
+const DEFAULT_LIMIT = 150;
 
 
+/*
+|--------------------------------------------------------------------------
+| URL Builder
+|--------------------------------------------------------------------------
+*/
 
-export const getSuggestionSong = async (id) => {
-    try{
-        const result = await fetch(`${api_url}songs/${id}/suggestions?&limit=150`);
-        const data = await result.json();
-        if(!result.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
+const buildUrl = (endpoint, params = {}) => {
+    const url = new URL(endpoint, API_URL);
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (
+            value !== undefined &&
+            value !== null &&
+            value !== ""
+        ) {
+            url.searchParams.set(key, value);
         }
-        return data;
-    }
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
-    }
+    });
+
+    return url.toString();
 };
 
 
+/*
+|--------------------------------------------------------------------------
+| Common API Request
+|--------------------------------------------------------------------------
+*/
 
-export const getSearchData = async (e) => {
-    try{
-        const result = await fetch(`${api_url}search?query=${e}&limit=150`);
-        const data = await result.json();
-        if(!result.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
+const apiRequest = async (endpoint, params = {}) => {
+    const url = buildUrl(endpoint, params);
+
+    try {
+        const response = await fetch(url);
+
+        let data;
+
+        const contentType =
+            response.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+
+            try {
+                data = JSON.parse(text);
+            } catch {
+                data = text;
+            }
         }
-        return data;
-    }
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
-    }
-};
 
-
-export const getSongbyQuery = async (e , limit) => {
-    try{ 
-        const song = await fetch(`${api_url}search/songs?query=${e}&limit=${limit}`);
-        const data = await song.json();
-        if(!song.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
+        if (!response.ok) {
+            throw new Error(
+                data?.message ||
+                data?.error ||
+                `Request failed: ${response.status} ${response.statusText}`
+            );
         }
+
         return data;
-    }
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
-    }
-};
-export const getArtistbyQuery = async (e , limit) => {
-    try{
-        const song = await fetch(`${api_url}search/artists?query=${e}&limit=${limit}`);
-        const data = await song.json();
-        if(!song.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
-        }
-        return data;
-    }
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
+
+    } catch (error) {
+        console.error("API Error:", error);
+        console.error("URL:", url);
+
+        throw error;
     }
 };
 
+
+/*
+|--------------------------------------------------------------------------
+| GENERAL SEARCH
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Search everything
+ *
+ * Example:
+ * getSearchData("Arijit Singh")
+ */
+export const getSearchData = async (
+    query,
+    limit = DEFAULT_LIMIT
+) => {
+
+    if (!query) {
+        throw new Error("Search query is required");
+    }
+
+    return apiRequest("search", {
+        query: query,
+        limit: limit
+    });
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| SONGS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Search songs
+ *
+ * Example:
+ * getSongbyQuery("Tum Hi Ho", 150)
+ */
+export const getSongbyQuery = async (
+    query,
+    limit = DEFAULT_LIMIT
+) => {
+
+    if (!query) {
+        throw new Error("Song search query is required");
+    }
+
+    return apiRequest("search/songs", {
+        query: query,
+        limit: limit
+    });
+};
+
+
+/**
+ * Get song by ID
+ *
+ * Example:
+ * getSongById("123456")
+ */
 export const getSongById = async (songId) => {
-    try {
-        const response = await fetch(`${api_url}songs/${songId}`);
-        const data = await response.json();
-        if (!response.ok) {
-            throw new Error(`Failed to fetch song: ${response.status} ${response.statusText}`);
-        }
 
-        return data;
-    } catch (error) {
-        console.error("Error fetching song:", error);
-        throw error; 
+    if (!songId) {
+        throw new Error("Song ID is required");
     }
-};
 
-export const searchAlbumByQuery = async (query) => {
-    try {
-        const Albums = await fetch(`${api_url}search/albums?query=${query}&limit=130`);
-        const data = await Albums.json();
-        if (!Albums.ok) {
-            throw new Error(data.message || 'Failed to fetch Album data');
-        }
-        return data;
-    } catch (error) {
-        console.error('API Error:', error);
-        throw error;
-    }
-};
-
-export const searchArtistByQuery = async (query) => {
-    try{
-        const Artists = await fetch(`${api_url}search/artists?query=${query}&limit=130`);
-        const data = await Artists.json();
-        if(!Artists.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
-        }
-        return data;
-    }
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
-        
-    }
-};
-
-export const fetchAlbumByID = async (ID) => { 
-    try{
-        const Album = await fetch(`${api_url}albums?id=${ID}&limit=130`);
-        const data = await Album.json();
-        if(!Album.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
-        }
-        return data;
-    }
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
-    }
-};
-
-export const fetchArtistByID = async (ID) => { 
-    try {
-        const response = await fetch(`${api_url}artists?id=${ID}`);
-        const text = await response.text(); 
-
-        // Ensure it's JSON before parsing
-        const data = JSON.parse(text);
-        if (!response.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
-        }
-        return data;
-    } catch (error) {
-        console.error('API Error:', error);
-        throw error;
-    }
+    return apiRequest(
+        `songs/${encodeURIComponent(songId)}`
+    );
 };
 
 
-export const searchPlayListByQuery = async (query) => { 
-    try{
-        const playlists = await fetch(`${api_url}search/playlists?query=${query}&limit=130`);
-        const data = await playlists.json();
-        if(!playlists.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
-        }
-        return data;
-    }
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
-    }
-};
+/**
+ * Get song suggestions
+ *
+ * Example:
+ * getSuggestionSong("123456", 150)
+ */
+export const getSuggestionSong = async (
+    songId,
+    limit = DEFAULT_LIMIT
+) => {
 
-export const fetchplaylistsByID = async (ID) => { 
-    try{
-        const playlists = await fetch(`${api_url}playlists?id=${ID}&limit=130`);
-        const data = await playlists.json();
-        if(!playlists.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
-        }
-        return data;
+    if (!songId) {
+        throw new Error("Song ID is required");
     }
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
-    }
-};
 
-export const fetchSongSuggestionsByID = async (ID) => { 
-    try{
-        const playlists = await fetch(`${api_url}?id=${ID}&limit=130`);
-        const data = await playlists.json();
-        if(!playlists.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
+    return apiRequest(
+        `songs/${encodeURIComponent(songId)}/suggestions`,
+        {
+            limit: limit
         }
-        return data;
-    }
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
-    }
+    );
 };
 
 
-export const LyricsByID = async (ID ) =>{
-    try{
-        const Lyrics = await fetch(`${api_url}songs/${ID}/lyrics`);
-        const data = await Lyrics.json();
-        if(!Lyrics.ok) {
-            throw new Error(data.message || 'Failed to Fetch Artist Data');
-        }
-        return data;
-    } 
-    catch{
-        console.log('API Error: ', Error );
-        throw Error;
+/**
+ * Alias for song suggestions
+ */
+export const fetchSongSuggestionsByID = async (
+    songId,
+    limit = DEFAULT_LIMIT
+) => {
+
+    if (!songId) {
+        throw new Error("Song ID is required");
     }
-    
-    
-}
+
+    return apiRequest(
+        `songs/${encodeURIComponent(songId)}/suggestions`,
+        {
+            limit: limit
+        }
+    );
+};
+
+
+/**
+ * Get lyrics
+ *
+ * Example:
+ * LyricsByID("123456")
+ */
+export const LyricsByID = async (songId) => {
+
+    if (!songId) {
+        throw new Error("Song ID is required");
+    }
+
+    return apiRequest(
+        `songs/${encodeURIComponent(songId)}/lyrics`
+    );
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| ARTISTS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Search artists
+ *
+ * Example:
+ * getArtistbyQuery("Arijit Singh", 150)
+ */
+export const getArtistbyQuery = async (
+    query,
+    limit = DEFAULT_LIMIT
+) => {
+
+    if (!query) {
+        throw new Error("Artist search query is required");
+    }
+
+    return apiRequest("search/artists", {
+        query: query,
+        limit: limit
+    });
+};
+
+
+/**
+ * Search artists
+ *
+ * Alias
+ */
+export const searchArtistByQuery = async (
+    query,
+    limit = DEFAULT_LIMIT
+) => {
+
+    if (!query) {
+        throw new Error("Artist search query is required");
+    }
+
+    return apiRequest("search/artists", {
+        query: query,
+        limit: limit
+    });
+};
+
+
+/**
+ * Get artist by ID
+ *
+ * Example:
+ * fetchArtistByID("123456")
+ */
+export const fetchArtistByID = async (artistId) => {
+
+    if (!artistId) {
+        throw new Error("Artist ID is required");
+    }
+
+    return apiRequest("artists", {
+        id: artistId
+    });
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| ALBUMS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Search albums
+ *
+ * Example:
+ * searchAlbumByQuery("Aashiqui 2", 150)
+ */
+export const searchAlbumByQuery = async (
+    query,
+    limit = DEFAULT_LIMIT
+) => {
+
+    if (!query) {
+        throw new Error("Album search query is required");
+    }
+
+    return apiRequest("search/albums", {
+        query: query,
+        limit: limit
+    });
+};
+
+
+/**
+ * Get album by ID
+ *
+ * Example:
+ * fetchAlbumByID("123456")
+ */
+export const fetchAlbumByID = async (
+    albumId,
+    limit = DEFAULT_LIMIT
+) => {
+
+    if (!albumId) {
+        throw new Error("Album ID is required");
+    }
+
+    return apiRequest("albums", {
+        id: albumId,
+        limit: limit
+    });
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| PLAYLISTS
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Search playlists
+ *
+ * Example:
+ * searchPlayListByQuery("Workout", 150)
+ */
+export const searchPlayListByQuery = async (
+    query,
+    limit = DEFAULT_LIMIT
+) => {
+
+    if (!query) {
+        throw new Error("Playlist search query is required");
+    }
+
+    return apiRequest("search/playlists", {
+        query: query,
+        limit: limit
+    });
+};
+
+
+/**
+ * Get playlist by ID
+ *
+ * Example:
+ * fetchplaylistsByID("123456")
+ */
+export const fetchplaylistsByID = async (
+    playlistId,
+    limit = DEFAULT_LIMIT
+) => {
+
+    if (!playlistId) {
+        throw new Error("Playlist ID is required");
+    }
+
+    return apiRequest("playlists", {
+        id: playlistId,
+        limit: limit
+    });
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| DEFAULT EXPORT
+|--------------------------------------------------------------------------
+*/
+
+export default {
+
+    // Search
+    getSearchData,
+
+    // Songs
+    getSongbyQuery,
+    getSongById,
+    getSuggestionSong,
+    fetchSongSuggestionsByID,
+    LyricsByID,
+
+    // Artists
+    getArtistbyQuery,
+    searchArtistByQuery,
+    fetchArtistByID,
+
+    // Albums
+    searchAlbumByQuery,
+    fetchAlbumByID,
+
+    // Playlists
+    searchPlayListByQuery,
+    fetchplaylistsByID
+};
