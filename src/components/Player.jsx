@@ -792,7 +792,7 @@ const Player = () => {
           artist: artistNames,
           album: safeDecode(
             detail?.album?.name ||
-              "MusicMax"
+              "Dreamly5"
           ),
           artwork: artwork
             ? [
@@ -1167,7 +1167,7 @@ const Player = () => {
         await navigator.share({
           title:
             songName,
-          text: `Listen to ${songName} on MusicMax`,
+          text: `Listen to ${songName} on Dreamly5`,
           url,
         });
       } else if (
@@ -1233,9 +1233,9 @@ const Player = () => {
         detail?.album?.name ||
           currentSong?.album?.name ||
           currentSong?.albumName ||
-          "MusicMax"
+          "Dreamly5"
       ).trim() ||
-      "MusicMax";
+      "Dreamly5";
 
     const filename =
       `${title} - ${artist}.mp3`
