@@ -153,29 +153,29 @@ const SongsList = (props) => {
         <img
           src={imageUrl}
           alt=""
-          className="w-[5rem] h-[3rem] rounded object-cover"
+          className="w-[5rem] object-cover transition-all duration-700"
           onError={(event) => {
             event.currentTarget.src = "/Unknown.png";
           }}
         />
         {hovering && (
-          <GoPlay className="absolute inset-0 hidden lg:block m-auto w-[2.35rem] h-[2.35rem] opacity-80 icon" />
+          <GoPlay className="transition-all duration-700 absolute inset-0 hidden lg:flex items-center justify-center w-[2.35rem] h-[2.35rem]  opacity-65 backdrop-brightness-[0.6] icon" />
         )}
       </div>
 
-      <div className="flex w-full min-w-0 pl-5">
-        <h3 className="overflow-hidden text-ellipsis whitespace-nowrap text-[0.75rem] lg:text-[0.875rem] font-medium">
+      <div className="flex w-full pl-5 ">
+        <h3 className="overflow-clip text-[0.75rem] lg:text-[0.875rem] h-[1.3rem] font-medium">
           {safeDecode(songName)}
         </h3>
       </div>
 
-      <div className="flex w-full min-w-0">
-        <p className="text-[0.60rem] lg:text-[0.75rem] overflow-hidden text-ellipsis whitespace-nowrap mr-3">
+      <div className="flex w-full">
+        <p className="text-[0.60rem] lg:text-[0.75rem] h-[1rem] mr-3 overflow-clip lg:w-auto">
           {safeDecode(artistNames)}
         </p>
       </div>
 
-      <div className="song-duration mr-2 shrink-0">
+      <div className="song-duration mr-2">
         <span className="text-[0.60rem] lg:text-[0.75rem]">
           {formatTime(item?.duration ?? duration)}
         </span>
