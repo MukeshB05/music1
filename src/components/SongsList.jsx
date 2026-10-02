@@ -146,7 +146,7 @@ const SongsList = (props) => {
       onClick={handleClick}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
-      className="overflow-hidden h-[3.5rem] w-full song-item flex justify-between items-center p-2 song-info text-left"
+      className="overflow-clip h-[3.5rem] w-full song-item flex justify-between items-center p-2 song-info"
       aria-label={`Play ${safeDecode(songName)}`}
     >
       <div className="relative cursor-pointer shrink-0">
